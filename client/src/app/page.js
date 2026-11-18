@@ -13,8 +13,17 @@ export default function Home() {
   useEffect(() => {
     fetch('http://localhost:5000/api/controls')
       .then((res) => res.json())
-      .then((data) => setControls(data))
-      .catch((err) => console.log('Error fetching controls:', err));
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setControls(data);
+        } else {
+          setControls([]);
+        }
+      })
+      .catch((err) => {
+        console.log('Error fetching controls:', err);
+        setControls([]);
+      });
   }, []);
 
   // Add new control
@@ -31,7 +40,9 @@ export default function Home() {
         body: JSON.stringify(newControl),
       });
       const savedControl = await response.json();
-      setControls([...controls, savedControl]);
+      if (savedControl && savedControl._id) {
+        setControls((prev) => (Array.isArray(prev) ? [...prev, savedControl] : [savedControl]));
+      }
       setNewId('');
       setNewName('');
     } catch (err) {
@@ -48,7 +59,9 @@ export default function Home() {
         body: JSON.stringify({ status: updatedStatus }),
       });
       const updatedControl = await response.json();
-      setControls(controls.map((c) => (c._id === mongoId ? updatedControl : c)));
+      setControls((prev) =>
+        Array.isArray(prev) ? prev.map((c) => (c._id === mongoId ? updatedControl : c)) : []
+      );
     } catch (err) {
       console.log('Error updating status:', err);
     }
@@ -60,15 +73,18 @@ export default function Home() {
       await fetch(`http://localhost:5000/api/controls/${mongoId}`, {
         method: 'DELETE',
       });
-      setControls(controls.filter((c) => c._id !== mongoId));
+      setControls((prev) =>
+        Array.isArray(prev) ? prev.filter((c) => c._id !== mongoId) : []
+      );
     } catch (err) {
       console.log('Error deleting control:', err);
     }
   };
 
+  const safeControls = Array.isArray(controls) ? controls : [];
   const filteredControls = filter === 'All'
-    ? controls
-    : controls.filter((c) => c.status === filter);
+    ? safeControls
+    : safeControls.filter((c) => c.status === filter);
 
   return (
     <main className="min-h-screen bg-gray-900 text-white p-8">
