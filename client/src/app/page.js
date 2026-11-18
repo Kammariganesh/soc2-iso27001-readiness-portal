@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 
+const API_URL = 'https://soc2-iso27001-readiness-portal.onrender.com/api/controls';
+
 export default function Home() {
   const [controls, setControls] = useState([]);
   const [filter, setFilter] = useState('All');
@@ -11,7 +13,7 @@ export default function Home() {
 
   // Fetch controls from backend when page loads
   useEffect(() => {
-    fetch('http://localhost:5000/api/controls')
+    fetch(API_URL)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
@@ -34,7 +36,7 @@ export default function Home() {
     const newControl = { id: newId, name: newName, framework: newFramework, status: newStatus };
 
     try {
-      const response = await fetch('http://localhost:5000/api/controls', {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newControl),
@@ -53,7 +55,7 @@ export default function Home() {
   // Update control status
   const handleStatusChange = async (mongoId, updatedStatus) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/controls/${mongoId}`, {
+      const response = await fetch(`${API_URL}/${mongoId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: updatedStatus }),
@@ -70,7 +72,7 @@ export default function Home() {
   // Delete control
   const handleDelete = async (mongoId) => {
     try {
-      await fetch(`http://localhost:5000/api/controls/${mongoId}`, {
+      await fetch(`${API_URL}/${mongoId}`, {
         method: 'DELETE',
       });
       setControls((prev) =>
