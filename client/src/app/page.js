@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react';
 const API_URL = 'https://soc2-iso27001-readiness-portal.onrender.com/api/controls';
 
 export default function Home() {
+  // Views: 'landing' | 'dashboard' | 'admin'
   const [view, setView] = useState('landing');
 
-  // Interactive Framework Switcher state (competitor-style tabs)
+  // Interactive Framework Switcher state
   const [activeTab, setActiveTab] = useState('SOC 2');
 
   // Customer Onboarding Form states
@@ -16,6 +17,36 @@ export default function Home() {
   const [companySize, setCompanySize] = useState('1-50 Employees');
   const [cloudProvider, setCloudProvider] = useState('AWS');
   const [targetTimeline, setTargetTimeline] = useState('Within 3 Months');
+
+  // Admin Panel states (Organizations & Team/Role Management)
+  const [organizations, setOrganizations] = useState([
+    {
+      id: 'ORG-101',
+      name: 'FinScale Cloud Inc',
+      email: 'security@finscale.io',
+      framework: 'SOC 2',
+      cloud: 'AWS',
+      status: 'Active',
+    },
+    {
+      id: 'ORG-102',
+      name: 'DataPulse Systems',
+      email: 'grc@datapulse.dev',
+      framework: 'ISO 27001',
+      cloud: 'Azure',
+      status: 'In Review',
+    },
+  ]);
+
+  const [teamMembers, setTeamMembers] = useState([
+    { id: 1, name: 'Admin Lead', email: 'admin@complianceguard.io', role: 'Super Admin', status: 'Active' },
+    { id: 2, name: 'Security Auditor', email: 'auditor@complianceguard.io', role: 'Auditor', status: 'Active' },
+    { id: 3, name: 'Compliance Analyst', email: 'analyst@complianceguard.io', role: 'Editor', status: 'Active' },
+  ]);
+
+  const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberEmail, setNewMemberEmail] = useState('');
+  const [newMemberRole, setNewMemberRole] = useState('Editor');
 
   // FAQ state
   const [openFaq, setOpenFaq] = useState(0);
@@ -38,9 +69,56 @@ export default function Home() {
   const handleOnboardingSubmit = (e) => {
     e.preventDefault();
     if (!companyName || !workEmail) return;
+
+    const newOrg = {
+      id: `ORG-${Math.floor(103 + Math.random() * 890)}`,
+      name: companyName,
+      email: workEmail,
+      framework: selectedFramework,
+      cloud: cloudProvider,
+      status: 'Active',
+    };
+    setOrganizations((prev) => [newOrg, ...prev]);
     setNewFramework(selectedFramework);
     setView('dashboard');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleAddMember = (e) => {
+    e.preventDefault();
+    if (!newMemberName || !newMemberEmail) return;
+    setTeamMembers((prev) => [
+      ...prev,
+      {
+        id: Date.now(),
+        name: newMemberName,
+        email: newMemberEmail,
+        role: newMemberRole,
+        status: 'Active',
+      },
+    ]);
+    setNewMemberName('');
+    setNewMemberEmail('');
+  };
+
+  const handleToggleMemberStatus = (memberId) => {
+    setTeamMembers((prev) =>
+      prev.map((m) =>
+        m.id === memberId ? { ...m, status: m.status === 'Active' ? 'Suspended' : 'Active' } : m
+      )
+    );
+  };
+
+  const handleDeleteMember = (memberId) => {
+    setTeamMembers((prev) => prev.filter((m) => m.id !== memberId));
+  };
+
+  const handleToggleOrgStatus = (orgId) => {
+    setOrganizations((prev) =>
+      prev.map((o) =>
+        o.id === orgId ? { ...o, status: o.status === 'Active' ? 'In Review' : 'Active' } : o
+      )
+    );
   };
 
   const handleAddControl = async (e) => {
@@ -95,6 +173,12 @@ export default function Home() {
     ? safeControls
     : safeControls.filter((c) => c.status === filter);
 
+  const totalCount = safeControls.length;
+  const compliantCount = safeControls.filter((c) => c.status === 'Compliant').length;
+  const inProgressCount = safeControls.filter((c) => c.status === 'In Progress').length;
+  const nonCompliantCount = safeControls.filter((c) => c.status === 'Non-Compliant').length;
+  const readinessScore = totalCount > 0 ? Math.round((compliantCount / totalCount) * 100) : 0;
+
   const frameworkDetails = {
     'SOC 2': {
       badge: 'AICPA TRUST SERVICES CRITERIA',
@@ -132,8 +216,8 @@ export default function Home() {
       a: 'Yes. You can add and filter both SOC 2 and ISO 27001 controls inside the readiness portal and filter by Compliant, In Progress, or Non-Compliant.',
     },
     {
-      q: 'What happens after filling out the Customer Onboarding form?',
-      a: 'Your organization details, cloud stack, and target compliance framework are applied to your workspace so you can immediately launch into the controls dashboard.',
+      q: 'What can administrators manage inside the Admin Panel?',
+      a: 'Admins can view onboarded organizations, toggle workspace review status, manage team members and roles (Super Admin, Auditor, Editor), and monitor overall audit readiness.',
     },
   ];
 
@@ -168,6 +252,12 @@ export default function Home() {
                 className="text-sm text-gray-300 hover:text-white px-3 py-2 transition"
               >
                 Open Portal
+              </button>
+              <button
+                onClick={() => setView('admin')}
+                className="text-sm bg-gray-900 hover:bg-gray-800 border border-gray-700 text-cyan-300 font-semibold px-3.5 py-2 rounded-lg transition"
+              >
+                Admin Panel
               </button>
               <a
                 href="#onboarding"
@@ -462,7 +552,218 @@ export default function Home() {
   }
 
   // ==========================================
-  // VIEW 2: MAIN COMPLIANCE DASHBOARD PORTAL
+  // VIEW 2: ADMIN PANEL
+  // ==========================================
+  if (view === 'admin') {
+    return (
+      <main className="min-h-screen bg-gray-950 text-white p-6 sm:p-8">
+        <div className="max-w-6xl mx-auto space-y-8">
+          {/* Admin Header */}
+          <header className="border-b border-gray-800 pb-5 flex flex-wrap justify-between items-center gap-4">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-widest text-cyan-400">Governance & Administration</span>
+              <h1 className="text-3xl font-bold text-white mt-1">ComplianceGuard Admin Panel</h1>
+              <p className="text-gray-400 text-sm mt-1">
+                Manage onboarded organizations, team access roles, and overall audit readiness metrics.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setView('dashboard')}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
+              >
+                Controls Dashboard
+              </button>
+              <button
+                onClick={() => setView('landing')}
+                className="bg-gray-900 hover:bg-gray-800 border border-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm transition"
+              >
+                ← Landing Page
+              </button>
+            </div>
+          </header>
+
+          {/* Admin KPI Summary Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-gray-900 border border-gray-800 p-4 rounded-xl">
+              <p className="text-xs text-gray-400 uppercase font-semibold">Readiness Score</p>
+              <p className="text-2xl font-extrabold text-cyan-400 mt-1">{readinessScore}%</p>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 p-4 rounded-xl">
+              <p className="text-xs text-gray-400 uppercase font-semibold">Total Controls</p>
+              <p className="text-2xl font-extrabold text-white mt-1">{totalCount}</p>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 p-4 rounded-xl">
+              <p className="text-xs text-gray-400 uppercase font-semibold">Compliant</p>
+              <p className="text-2xl font-extrabold text-green-400 mt-1">{compliantCount}</p>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 p-4 rounded-xl">
+              <p className="text-xs text-gray-400 uppercase font-semibold">In Progress</p>
+              <p className="text-2xl font-extrabold text-yellow-400 mt-1">{inProgressCount}</p>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 p-4 rounded-xl">
+              <p className="text-xs text-gray-400 uppercase font-semibold">Non-Compliant</p>
+              <p className="text-2xl font-extrabold text-red-400 mt-1">{nonCompliantCount}</p>
+            </div>
+          </div>
+
+          {/* Onboarded Organizations Table */}
+          <section className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-white">Onboarded Organizations</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Workspaces registered via Customer Onboarding</p>
+              </div>
+              <span className="text-xs bg-blue-950 text-blue-300 border border-blue-800/60 px-3 py-1 rounded-full font-semibold">
+                {organizations.length} Workspaces
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-800 text-xs uppercase text-gray-400">
+                    <th className="py-3 px-3">Org ID</th>
+                    <th className="py-3 px-3">Organization</th>
+                    <th className="py-3 px-3">Contact Email</th>
+                    <th className="py-3 px-3">Framework</th>
+                    <th className="py-3 px-3">Cloud</th>
+                    <th className="py-3 px-3">Status</th>
+                    <th className="py-3 px-3 text-right">Admin Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/70 text-sm">
+                  {organizations.map((org) => (
+                    <tr key={org.id} className="hover:bg-gray-800/40">
+                      <td className="py-3 px-3 font-mono text-xs text-blue-400">{org.id}</td>
+                      <td className="py-3 px-3 font-semibold text-gray-100">{org.name}</td>
+                      <td className="py-3 px-3 text-gray-400">{org.email}</td>
+                      <td className="py-3 px-3 text-gray-300">{org.framework}</td>
+                      <td className="py-3 px-3 text-gray-300">{org.cloud}</td>
+                      <td className="py-3 px-3">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            org.status === 'Active'
+                              ? 'bg-green-950 text-green-300 border border-green-800/60'
+                              : 'bg-yellow-950 text-yellow-300 border border-yellow-800/60'
+                          }`}
+                        >
+                          {org.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        <button
+                          onClick={() => handleToggleOrgStatus(org.id)}
+                          className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-3 py-1 rounded-lg transition"
+                        >
+                          Toggle Status
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {/* Team & Role Access Management */}
+          <section className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+            <h2 className="text-xl font-bold text-white mb-1">Team & Role Access Management</h2>
+            <p className="text-xs text-gray-400 mb-5">Assign compliance roles and manage account access</p>
+
+            <form onSubmit={handleAddMember} className="grid sm:grid-cols-4 gap-3 mb-6">
+              <input
+                type="text"
+                placeholder="Member Name"
+                value={newMemberName}
+                onChange={(e) => setNewMemberName(e.target.value)}
+                className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                required
+              />
+              <input
+                type="email"
+                placeholder="work@email.com"
+                value={newMemberEmail}
+                onChange={(e) => setNewMemberEmail(e.target.value)}
+                className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                required
+              />
+              <select
+                value={newMemberRole}
+                onChange={(e) => setNewMemberRole(e.target.value)}
+                className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none"
+              >
+                <option value="Super Admin">Super Admin</option>
+                <option value="Auditor">Auditor</option>
+                <option value="Editor">Editor</option>
+              </select>
+              <button
+                type="submit"
+                className="bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg px-4 py-2 text-sm transition"
+              >
+                + Add Team Member
+              </button>
+            </form>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-800 text-xs uppercase text-gray-400">
+                    <th className="py-3 px-3">Name</th>
+                    <th className="py-3 px-3">Email</th>
+                    <th className="py-3 px-3">Role</th>
+                    <th className="py-3 px-3">Status</th>
+                    <th className="py-3 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800/70 text-sm">
+                  {teamMembers.map((member) => (
+                    <tr key={member.id} className="hover:bg-gray-800/40">
+                      <td className="py-3 px-3 font-medium text-gray-100">{member.name}</td>
+                      <td className="py-3 px-3 text-gray-400">{member.email}</td>
+                      <td className="py-3 px-3">
+                        <span className="bg-blue-950/70 text-blue-300 border border-blue-800/50 px-2.5 py-0.5 rounded-md text-xs font-semibold">
+                          {member.role}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                            member.status === 'Active'
+                              ? 'bg-green-950 text-green-300 border border-green-800/60'
+                              : 'bg-red-950 text-red-300 border border-red-800/60'
+                          }`}
+                        >
+                          {member.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right space-x-2">
+                        <button
+                          onClick={() => handleToggleMemberStatus(member.id)}
+                          className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-2.5 py-1 rounded-lg transition"
+                        >
+                          {member.status === 'Active' ? 'Suspend' : 'Activate'}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMember(member.id)}
+                          className="text-xs bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-700/50 px-2.5 py-1 rounded-lg transition"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  // ==========================================
+  // VIEW 3: MAIN COMPLIANCE DASHBOARD PORTAL
   // ==========================================
   return (
     <main className="min-h-screen bg-gray-900 text-white p-8">
@@ -476,12 +777,20 @@ export default function Home() {
                 : 'Track, document, and manage security compliance controls.'}
             </p>
           </div>
-          <button
-            onClick={() => setView('landing')}
-            className="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm transition"
-          >
-            ← Back to Landing Page
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setView('admin')}
+              className="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
+            >
+              Admin Panel
+            </button>
+            <button
+              onClick={() => setView('landing')}
+              className="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm transition"
+            >
+              ← Landing Page
+            </button>
+          </div>
         </header>
 
         {/* Add Control Form */}
