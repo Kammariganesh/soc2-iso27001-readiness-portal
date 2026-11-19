@@ -4,14 +4,21 @@ import { useState, useEffect } from 'react';
 const API_URL = 'https://soc2-iso27001-readiness-portal.onrender.com/api/controls';
 
 export default function Home() {
-  // View state: 'landing' (Onboarding Page) or 'dashboard' (Controls Portal)
   const [view, setView] = useState('landing');
+
+  // Interactive Framework Switcher state (competitor-style tabs)
+  const [activeTab, setActiveTab] = useState('SOC 2');
 
   // Customer Onboarding Form states
   const [companyName, setCompanyName] = useState('');
   const [workEmail, setWorkEmail] = useState('');
   const [selectedFramework, setSelectedFramework] = useState('SOC 2');
   const [companySize, setCompanySize] = useState('1-50 Employees');
+  const [cloudProvider, setCloudProvider] = useState('AWS');
+  const [targetTimeline, setTargetTimeline] = useState('Within 3 Months');
+
+  // FAQ state
+  const [openFaq, setOpenFaq] = useState(0);
 
   // Dashboard states
   const [controls, setControls] = useState([]);
@@ -21,36 +28,24 @@ export default function Home() {
   const [newFramework, setNewFramework] = useState('SOC 2');
   const [newStatus, setNewStatus] = useState('In Progress');
 
-  // Fetch controls from backend
   useEffect(() => {
     fetch(API_URL)
       .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setControls(data);
-        } else {
-          setControls([]);
-        }
-      })
-      .catch((err) => {
-        console.log('Error fetching controls:', err);
-        setControls([]);
-      });
+      .then((data) => setControls(Array.isArray(data) ? data : []))
+      .catch(() => setControls([]));
   }, []);
 
-  // Handle Onboarding Submit
   const handleOnboardingSubmit = (e) => {
     e.preventDefault();
     if (!companyName || !workEmail) return;
     setNewFramework(selectedFramework);
     setView('dashboard');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Add new control
   const handleAddControl = async (e) => {
     e.preventDefault();
     if (!newId || !newName) return;
-
     const newControl = { id: newId, name: newName, framework: newFramework, status: newStatus };
 
     try {
@@ -70,7 +65,6 @@ export default function Home() {
     }
   };
 
-  // Update control status
   const handleStatusChange = async (mongoId, updatedStatus) => {
     try {
       const response = await fetch(`${API_URL}/${mongoId}`, {
@@ -87,15 +81,10 @@ export default function Home() {
     }
   };
 
-  // Delete control
   const handleDelete = async (mongoId) => {
     try {
-      await fetch(`${API_URL}/${mongoId}`, {
-        method: 'DELETE',
-      });
-      setControls((prev) =>
-        Array.isArray(prev) ? prev.filter((c) => c._id !== mongoId) : []
-      );
+      await fetch(`${API_URL}/${mongoId}`, { method: 'DELETE' });
+      setControls((prev) => (Array.isArray(prev) ? prev.filter((c) => c._id !== mongoId) : []));
     } catch (err) {
       console.log('Error deleting control:', err);
     }
@@ -106,77 +95,150 @@ export default function Home() {
     ? safeControls
     : safeControls.filter((c) => c.status === filter);
 
+  const frameworkDetails = {
+    'SOC 2': {
+      badge: 'AICPA TRUST SERVICES CRITERIA',
+      title: 'SOC 2 Type I & Type II Automation',
+      subtitle: 'Prove security, availability, and confidentiality controls to enterprise buyers with continuous tracking.',
+      checklist: [
+        { code: 'CC1.1', item: 'Control Environment & Security Governance Policy', status: 'Ready' },
+        { code: 'CC6.1', item: 'Logical Access, RBAC & Multi-Factor Authentication', status: 'Monitored' },
+        { code: 'CC7.2', item: 'System Monitoring, Alerting & Incident Response', status: 'Active' },
+        { code: 'CC8.1', item: 'Change Management & Code Review Controls', status: 'Ready' },
+      ],
+    },
+    'ISO 27001': {
+      badge: 'ISO/IEC 27001:2022 ISMS',
+      title: 'ISO 27001 Information Security Management',
+      subtitle: 'Build a structured ISMS and map Annex A controls for global enterprise and international readiness.',
+      checklist: [
+        { code: 'A.5.1', item: 'Policies for Information Security Governance', status: 'Ready' },
+        { code: 'A.5.15', item: 'Access Control & Least-Privilege Provisioning', status: 'Monitored' },
+        { code: 'A.8.15', item: 'Audit Logging, Event Trails & Retention', status: 'Active' },
+        { code: 'A.8.24', item: 'Cryptography & Data Protection Controls', status: 'Ready' },
+      ],
+    },
+  };
+
+  const currentTabData = frameworkDetails[activeTab];
+
+  const faqs = [
+    {
+      q: 'How does ComplianceGuard speed up SOC 2 and ISO 27001 readiness?',
+      a: 'It centralizes your compliance controls, highlights readiness gaps instantly, and lets teams update control statuses in real time instead of juggling scattered spreadsheets.',
+    },
+    {
+      q: 'Can our team track multiple frameworks in one workspace?',
+      a: 'Yes. You can add and filter both SOC 2 and ISO 27001 controls inside the readiness portal and filter by Compliant, In Progress, or Non-Compliant.',
+    },
+    {
+      q: 'What happens after filling out the Customer Onboarding form?',
+      a: 'Your organization details, cloud stack, and target compliance framework are applied to your workspace so you can immediately launch into the controls dashboard.',
+    },
+  ];
+
   // ==========================================
-  // VIEW 1: CUSTOMER ONBOARDING LANDING PAGE
+  // VIEW 1: ENTERPRISE LANDING & ONBOARDING PAGE
   // ==========================================
   if (view === 'landing') {
     return (
-      <main className="min-h-screen bg-gray-950 text-white flex flex-col justify-between">
-        {/* Top Navbar */}
-        <nav className="border-b border-gray-800 px-8 py-4 flex justify-between items-center max-w-6xl mx-auto w-full">
-          <div className="flex items-center gap-2">
-            <span className="bg-blue-600 text-white font-bold px-2.5 py-1 rounded-lg text-sm">SEC</span>
-            <span className="font-bold text-lg tracking-wide text-blue-400">ComplianceGuard</span>
+      <div className="min-h-screen bg-gray-950 text-white selection:bg-blue-600 selection:text-white">
+        {/* Navbar */}
+        <nav className="sticky top-0 z-50 bg-gray-950/90 backdrop-blur-md border-b border-gray-800">
+          <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div className="flex items-center gap-2.5">
+              <div className="bg-gradient-to-tr from-blue-600 to-cyan-500 text-white font-extrabold px-3 py-1.5 rounded-lg text-sm">
+                CG
+              </div>
+              <span className="font-bold text-xl tracking-tight">
+                Compliance<span className="text-blue-400">Guard</span>
+              </span>
+            </div>
+
+            <div className="hidden md:flex items-center gap-8 text-sm text-gray-300">
+              <a href="#workflow" className="hover:text-white transition">How It Works</a>
+              <a href="#frameworks" className="hover:text-white transition">Frameworks</a>
+              <a href="#onboarding" className="hover:text-white transition">Onboarding</a>
+              <a href="#faq" className="hover:text-white transition">FAQ</a>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setView('dashboard')}
+                className="text-sm text-gray-300 hover:text-white px-3 py-2 transition"
+              >
+                Open Portal
+              </button>
+              <a
+                href="#onboarding"
+                className="bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition"
+              >
+                Get Started
+              </a>
+            </div>
           </div>
-          <button
-            onClick={() => setView('dashboard')}
-            className="text-sm text-gray-300 hover:text-white border border-gray-700 hover:border-gray-500 px-4 py-2 rounded-lg transition"
-          >
-            Skip to Portal →
-          </button>
         </nav>
 
-        {/* Hero & Onboarding Section */}
-        <div className="max-w-6xl mx-auto px-8 py-12 grid md:grid-cols-2 gap-12 items-center">
-          {/* Left Side: Value Proposition */}
-          <div>
-            <span className="bg-blue-900/50 text-blue-300 border border-blue-700/50 text-xs font-semibold px-3 py-1 rounded-full">
-              ENTERPRISE SECURITY COMPLIANCE
-            </span>
-            <h1 className="text-4xl md:text-5xl font-extrabold mt-4 leading-tight">
-              Get <span className="text-blue-400">SOC 2</span> & <span className="text-blue-400">ISO 27001</span> Audit-Ready Faster.
+        {/* Hero + Onboarding Section */}
+        <section className="max-w-7xl mx-auto px-6 py-16 lg:py-20 grid lg:grid-cols-12 gap-12 items-center border-b border-gray-800/80">
+          <div className="lg:col-span-7">
+            <div className="inline-flex items-center gap-2 bg-blue-950/80 border border-blue-700/40 text-blue-300 text-xs font-semibold px-3.5 py-1.5 rounded-full mb-6">
+              <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+              CONTINUOUS COMPLIANCE & AUDIT READINESS
+            </div>
+
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight">
+              Get <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">SOC 2 & ISO 27001</span> Ready Without the Chaos.
             </h1>
-            <p className="text-gray-400 mt-4 text-base leading-relaxed">
-              Automate your compliance tracking, monitor security controls in real time, and streamline readiness assessments for your organization.
+
+            <p className="text-gray-400 text-lg mt-5 leading-relaxed max-w-2xl">
+              Onboard your organization, map security controls, monitor compliance status live, and prepare for audits with clarity across your entire stack.
             </p>
 
-            {/* 3-Step Onboarding Highlights */}
-            <div className="mt-8 space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg px-2.5 py-1 font-bold text-sm">1</div>
-                <div>
-                  <h3 className="font-semibold text-gray-200">Organization Profile Setup</h3>
-                  <p className="text-gray-400 text-sm">Register your workspace and choose your target compliance framework.</p>
-                </div>
+            <div className="mt-8 flex flex-wrap gap-4">
+              <a
+                href="#onboarding"
+                className="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3.5 rounded-xl transition shadow-lg shadow-blue-600/20"
+              >
+                Start Customer Onboarding →
+              </a>
+              <button
+                onClick={() => setView('dashboard')}
+                className="bg-gray-900 hover:bg-gray-800 border border-gray-700 text-gray-200 font-semibold px-6 py-3.5 rounded-xl transition"
+              >
+                View Controls Dashboard
+              </button>
+            </div>
+
+            {/* Metrics */}
+            <div className="mt-12 pt-8 border-t border-gray-800 grid grid-cols-3 gap-6">
+              <div>
+                <p className="text-2xl sm:text-3xl font-extrabold text-white">3x</p>
+                <p className="text-xs sm:text-sm text-gray-400 mt-1">Faster Readiness Setup</p>
               </div>
-              <div className="flex items-start gap-3">
-                <div className="bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg px-2.5 py-1 font-bold text-sm">2</div>
-                <div>
-                  <h3 className="font-semibold text-gray-200">Map & Track Controls</h3>
-                  <p className="text-gray-400 text-sm">Document SOC 2 Trust Services Criteria and ISO 27001 Annex A controls.</p>
-                </div>
+              <div>
+                <p className="text-2xl sm:text-3xl font-extrabold text-blue-400">100%</p>
+                <p className="text-xs sm:text-sm text-gray-400 mt-1">Live Control Visibility</p>
               </div>
-              <div className="flex items-start gap-3">
-                <div className="bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg px-2.5 py-1 font-bold text-sm">3</div>
-                <div>
-                  <h3 className="font-semibold text-gray-200">Real-Time Audit Readiness</h3>
-                  <p className="text-gray-400 text-sm">Filter compliant vs. non-compliant items instantly for external auditors.</p>
-                </div>
+              <div>
+                <p className="text-2xl sm:text-3xl font-extrabold text-cyan-400">24/7</p>
+                <p className="text-xs sm:text-sm text-gray-400 mt-1">Status & Gap Tracking</p>
               </div>
             </div>
           </div>
 
-          {/* Right Side: Customer Onboarding Form Card */}
-          <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl">
-            <h2 className="text-2xl font-bold text-white">Customer Onboarding</h2>
-            <p className="text-gray-400 text-sm mt-1 mb-6">Set up your organization workspace to begin tracking controls.</p>
+          {/* Right Onboarding Card */}
+          <div id="onboarding" className="lg:col-span-5 bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl">
+            <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Customer Onboarding</span>
+            <h2 className="text-2xl font-bold text-white mt-1">Launch Your Workspace</h2>
+            <p className="text-gray-400 text-sm mt-1 mb-6">Enter organization details to configure your compliance portal.</p>
 
             <form onSubmit={handleOnboardingSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Organization / Company Name</label>
+                <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">Organization Name *</label>
                 <input
                   type="text"
-                  placeholder="e.g. Acme Technologies Pvt Ltd"
+                  placeholder="e.g. FinScale Cloud Inc"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
                   className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none"
@@ -185,10 +247,10 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Work Email</label>
+                <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">Work Email *</label>
                 <input
                   type="email"
-                  placeholder="admin@company.com"
+                  placeholder="security@company.com"
                   value={workEmail}
                   onChange={(e) => setWorkEmail(e.target.value)}
                   className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none"
@@ -198,7 +260,7 @@ export default function Home() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Target Framework</label>
+                  <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">Target Framework</label>
                   <select
                     value={selectedFramework}
                     onChange={(e) => setSelectedFramework(e.target.value)}
@@ -210,7 +272,23 @@ export default function Home() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Company Size</label>
+                  <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">Cloud Provider</label>
+                  <select
+                    value={cloudProvider}
+                    onChange={(e) => setCloudProvider(e.target.value)}
+                    className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none"
+                  >
+                    <option value="AWS">AWS</option>
+                    <option value="Azure">Azure</option>
+                    <option value="GCP">GCP</option>
+                    <option value="Hybrid">Hybrid Cloud</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">Team Size</label>
                   <select
                     value={companySize}
                     onChange={(e) => setCompanySize(e.target.value)}
@@ -221,23 +299,165 @@ export default function Home() {
                     <option value="200+ Employees">200+ Employees</option>
                   </select>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">Audit Timeline</label>
+                  <select
+                    value={targetTimeline}
+                    onChange={(e) => setTargetTimeline(e.target.value)}
+                    className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white outline-none"
+                  >
+                    <option value="Within 1 Month">Within 1 Month</option>
+                    <option value="Within 3 Months">Within 3 Months</option>
+                    <option value="Within 6 Months">Within 6 Months</option>
+                  </select>
+                </div>
               </div>
 
               <button
                 type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-lg mt-2 transition shadow-lg"
+                className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold py-3.5 rounded-xl mt-2 transition"
               >
                 Complete Onboarding & Launch Portal →
               </button>
             </form>
           </div>
-        </div>
+        </section>
+
+        {/* Social Proof / Enterprise Logos Strip */}
+        <section className="border-b border-gray-800/80 bg-gray-900/30 py-8 px-6">
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+              Designed for High-Growth SaaS, FinTech & Cloud Teams
+            </p>
+            <div className="flex flex-wrap justify-center gap-8 text-sm font-bold text-gray-400">
+              <span>CLOUDCORE</span>
+              <span>FINVAULT</span>
+              <span>DATAPULSE</span>
+              <span>SYNAPSE AI</span>
+              <span>SECUREOPS</span>
+            </div>
+          </div>
+        </section>
+
+        {/* 3-Step Workflow Section */}
+        <section id="workflow" className="max-w-7xl mx-auto px-6 py-20 border-b border-gray-800/80">
+          <div className="text-center max-w-2xl mx-auto mb-14">
+            <span className="text-xs font-bold uppercase tracking-widest text-blue-400">How It Works</span>
+            <h2 className="text-3xl sm:text-4xl font-bold mt-2">From Onboarding to Audit-Ready in 3 Steps</h2>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              {
+                step: '01',
+                title: 'Onboard & Scope',
+                desc: 'Set up your organization profile, select your compliance framework, and define your cloud stack and audit timeline.',
+              },
+              {
+                step: '02',
+                title: 'Map & Monitor Controls',
+                desc: 'Add security controls, assign compliance states, and identify gaps across your infrastructure in real time.',
+              },
+              {
+                step: '03',
+                title: 'Stay Audit-Ready',
+                desc: 'Filter compliant vs. non-compliant controls anytime so security leads and auditors always have an up-to-date view.',
+              },
+            ].map((item) => (
+              <div key={item.step} className="bg-gray-900 border border-gray-800 p-7 rounded-2xl">
+                <span className="text-xs font-extrabold text-cyan-400 bg-cyan-950/60 border border-cyan-700/40 px-3 py-1 rounded-full">
+                  STEP {item.step}
+                </span>
+                <h3 className="text-xl font-bold text-white mt-4">{item.title}</h3>
+                <p className="text-gray-400 text-sm mt-2.5 leading-relaxed">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Interactive Framework Switcher Section */}
+        <section id="frameworks" className="max-w-7xl mx-auto px-6 py-20 border-b border-gray-800/80">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-widest text-blue-400">Framework Coverage</span>
+              <h2 className="text-3xl sm:text-4xl font-bold mt-2">Explore Supported Standards</h2>
+            </div>
+
+            <div className="inline-flex bg-gray-900 p-1.5 rounded-xl border border-gray-800">
+              {['SOC 2', 'ISO 27001'].map((fw) => (
+                <button
+                  key={fw}
+                  onClick={() => setActiveTab(fw)}
+                  className={`px-5 py-2 rounded-lg text-sm font-semibold transition ${
+                    activeTab === fw ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {fw}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
+            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">{currentTabData.badge}</span>
+            <h3 className="text-2xl font-bold text-white mt-2">{currentTabData.title}</h3>
+            <p className="text-gray-400 text-sm mt-2 max-w-3xl">{currentTabData.subtitle}</p>
+
+            <div className="mt-8 grid sm:grid-cols-2 gap-4">
+              {currentTabData.checklist.map((row) => (
+                <div
+                  key={row.code}
+                  className="bg-gray-950 border border-gray-800 rounded-xl p-4 flex items-center justify-between gap-4"
+                >
+                  <div>
+                    <span className="text-xs font-bold text-blue-400">{row.code}</span>
+                    <p className="text-sm font-medium text-gray-200 mt-0.5">{row.item}</p>
+                  </div>
+                  <span className="text-xs font-semibold bg-green-950 text-green-300 border border-green-800/60 px-2.5 py-1 rounded-full shrink-0">
+                    {row.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* FAQ Section */}
+        <section id="faq" className="max-w-4xl mx-auto px-6 py-20">
+          <div className="text-center mb-12">
+            <span className="text-xs font-bold uppercase tracking-widest text-blue-400">FAQ</span>
+            <h2 className="text-3xl font-bold mt-2">Common Questions</h2>
+          </div>
+
+          <div className="space-y-4">
+            {faqs.map((item, idx) => (
+              <div key={idx} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                <button
+                  onClick={() => setOpenFaq(openFaq === idx ? -1 : idx)}
+                  className="w-full px-6 py-4 text-left flex justify-between items-center font-semibold text-gray-200 hover:text-white"
+                >
+                  <span>{item.q}</span>
+                  <span className="text-blue-400 text-xl">{openFaq === idx ? '−' : '+'}</span>
+                </button>
+                {openFaq === idx && (
+                  <div className="px-6 pb-4 text-sm text-gray-400 leading-relaxed border-t border-gray-800/60 pt-3">
+                    {item.a}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
 
         {/* Footer */}
-        <footer className="border-t border-gray-800 py-4 text-center text-xs text-gray-500">
-          Enterprise SOC 2 & ISO 27001 Readiness Portal • Secure Compliance Management
+        <footer className="border-t border-gray-800 py-8 px-6 text-sm text-gray-500">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+            <span className="font-semibold text-gray-300">ComplianceGuard • SOC 2 & ISO 27001 Readiness Portal</span>
+            <span>© {new Date().getFullYear()} All rights reserved.</span>
+          </div>
         </footer>
-      </main>
+      </div>
     );
   }
 
@@ -250,9 +470,9 @@ export default function Home() {
         <header className="mb-8 border-b border-gray-800 pb-4 flex flex-wrap justify-between items-center gap-4">
           <div>
             <h1 className="text-3xl font-bold text-blue-400">Enterprise SOC 2 & ISO 27001 Readiness Portal</h1>
-            <p className="text-gray-400 mt-1">
+            <p className="text-gray-400 mt-1 text-sm">
               {companyName
-                ? `Workspace: ${companyName} (${companySize}) • Contact: ${workEmail}`
+                ? `Workspace: ${companyName} (${companySize}) • Cloud: ${cloudProvider} • Target: ${targetTimeline} • Contact: ${workEmail}`
                 : 'Track, document, and manage security compliance controls.'}
             </p>
           </div>
@@ -260,7 +480,7 @@ export default function Home() {
             onClick={() => setView('landing')}
             className="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm transition"
           >
-            ← Onboarding Home
+            ← Back to Landing Page
           </button>
         </header>
 
