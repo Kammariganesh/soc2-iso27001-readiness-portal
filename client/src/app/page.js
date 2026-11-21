@@ -3,14 +3,68 @@ import { useState, useEffect } from 'react';
 
 const API_URL = 'https://soc2-iso27001-readiness-portal.onrender.com/api/controls';
 
-export default function Home() {
-  // Views: 'landing' | 'dashboard' | 'admin'
-  const [view, setView] = useState('landing');
+const STORAGE_KEYS = {
+  orgs: 'complianceguard_organizations_v1',
+  members: 'complianceguard_team_members_v1',
+  controls: 'complianceguard_controls_v1',
+  selectedOrg: 'complianceguard_selected_org_v1',
+};
 
-  // Interactive Framework Switcher state
+const DEFAULT_ORGANIZATIONS = [
+  {
+    id: 'ORG-101',
+    name: 'FinScale Cloud Inc',
+    email: 'security@finscale.io',
+    framework: 'SOC 2',
+    cloud: 'AWS',
+    status: 'Active',
+  },
+  {
+    id: 'ORG-102',
+    name: 'DataPulse Systems',
+    email: 'grc@datapulse.dev',
+    framework: 'ISO 27001',
+    cloud: 'Azure',
+    status: 'In Review',
+  },
+];
+
+const DEFAULT_TEAM_MEMBERS = [
+  { id: 1, orgId: 'ORG-101', name: 'Admin Lead', email: 'admin@complianceguard.io', role: 'Super Admin', status: 'Active' },
+  { id: 2, orgId: 'ORG-101', name: 'Security Auditor', email: 'auditor@complianceguard.io', role: 'Auditor', status: 'Active' },
+  { id: 3, orgId: 'ORG-101', name: 'Compliance Analyst', email: 'analyst@complianceguard.io', role: 'Editor', status: 'Active' },
+  { id: 4, orgId: 'ORG-102', name: 'DataPulse Admin', email: 'admin@datapulse.dev', role: 'Super Admin', status: 'Active' },
+  { id: 5, orgId: 'ORG-102', name: 'ISO Auditor', email: 'auditor@datapulse.dev', role: 'Auditor', status: 'Active' },
+];
+
+const createStarterControls = (orgId, framework = 'SOC 2') => [
+  { _id: `${orgId}-c1`, orgId, id: 'c1', name: 'Access Control & MFA', framework, status: 'Compliant' },
+  { _id: `${orgId}-c2`, orgId, id: 'c2', name: 'Database Access & Encryption', framework, status: 'In Progress' },
+  { _id: `${orgId}-c3`, orgId, id: 'c3', name: 'Network Firewall & Segmentation', framework, status: 'Non-Compliant' },
+  { _id: `${orgId}-c4`, orgId, id: 'c4', name: 'System Logging & Monitoring', framework, status: 'Compliant' },
+];
+
+const DEFAULT_CONTROLS = [
+  ...createStarterControls('ORG-101', 'SOC 2'),
+  ...createStarterControls('ORG-102', 'ISO 27001'),
+];
+
+function readStorage(key, fallback) {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export default function Home() {
+  const [view, setView] = useState('landing');
   const [activeTab, setActiveTab] = useState('SOC 2');
 
-  // Customer Onboarding Form states
   const [companyName, setCompanyName] = useState('');
   const [workEmail, setWorkEmail] = useState('');
   const [selectedFramework, setSelectedFramework] = useState('SOC 2');
@@ -18,41 +72,25 @@ export default function Home() {
   const [cloudProvider, setCloudProvider] = useState('AWS');
   const [targetTimeline, setTargetTimeline] = useState('Within 3 Months');
 
-  // Admin Panel states (Organizations & Team/Role Management)
-  const [organizations, setOrganizations] = useState([
-    {
-      id: 'ORG-101',
-      name: 'FinScale Cloud Inc',
-      email: 'security@finscale.io',
-      framework: 'SOC 2',
-      cloud: 'AWS',
-      status: 'Active',
-    },
-    {
-      id: 'ORG-102',
-      name: 'DataPulse Systems',
-      email: 'grc@datapulse.dev',
-      framework: 'ISO 27001',
-      cloud: 'Azure',
-      status: 'In Review',
-    },
-  ]);
-
-  const [teamMembers, setTeamMembers] = useState([
-    { id: 1, name: 'Admin Lead', email: 'admin@complianceguard.io', role: 'Super Admin', status: 'Active' },
-    { id: 2, name: 'Security Auditor', email: 'auditor@complianceguard.io', role: 'Auditor', status: 'Active' },
-    { id: 3, name: 'Compliance Analyst', email: 'analyst@complianceguard.io', role: 'Editor', status: 'Active' },
-  ]);
+  const [organizations, setOrganizations] = useState(() =>
+    readStorage(STORAGE_KEYS.orgs, DEFAULT_ORGANIZATIONS)
+  );
+  const [selectedOrgId, setSelectedOrgId] = useState(() =>
+    readStorage(STORAGE_KEYS.selectedOrg, 'ORG-101')
+  );
+  const [teamMembers, setTeamMembers] = useState(() =>
+    readStorage(STORAGE_KEYS.members, DEFAULT_TEAM_MEMBERS)
+  );
+  const [controls, setControls] = useState(() =>
+    readStorage(STORAGE_KEYS.controls, DEFAULT_CONTROLS)
+  );
 
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberRole, setNewMemberRole] = useState('Editor');
 
-  // FAQ state
   const [openFaq, setOpenFaq] = useState(0);
 
-  // Dashboard states
-  const [controls, setControls] = useState([]);
   const [filter, setFilter] = useState('All');
   const [newId, setNewId] = useState('');
   const [newName, setNewName] = useState('');
@@ -60,25 +98,81 @@ export default function Home() {
   const [newStatus, setNewStatus] = useState('In Progress');
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.orgs, JSON.stringify(organizations));
+    } catch {}
+  }, [organizations]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.members, JSON.stringify(teamMembers));
+    } catch {}
+  }, [teamMembers]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.controls, JSON.stringify(controls));
+    } catch {}
+  }, [controls]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.selectedOrg, JSON.stringify(selectedOrgId));
+    } catch {}
+  }, [selectedOrgId]);
+
+  useEffect(() => {
     fetch(API_URL)
       .then((res) => res.json())
-      .then((data) => setControls(Array.isArray(data) ? data : []))
-      .catch(() => setControls([]));
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const taggedApiControls = data.map((item, idx) => ({
+            ...item,
+            _id: item._id || `api-${idx}`,
+            orgId: item.orgId || 'ORG-101',
+          }));
+          setControls((prev) => {
+            const otherOrgControls = prev.filter((c) => c.orgId !== 'ORG-101');
+            return [...taggedApiControls, ...otherOrgControls];
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleOnboardingSubmit = (e) => {
     e.preventDefault();
     if (!companyName || !workEmail) return;
 
+    const nextNum = 101 + organizations.length;
+    const newOrgId = `ORG-${nextNum}`;
+
     const newOrg = {
-      id: `ORG-${Math.floor(103 + Math.random() * 890)}`,
-      name: companyName,
-      email: workEmail,
+      id: newOrgId,
+      name: companyName.trim(),
+      email: workEmail.trim(),
       framework: selectedFramework,
       cloud: cloudProvider,
       status: 'Active',
     };
+
     setOrganizations((prev) => [newOrg, ...prev]);
+    setSelectedOrgId(newOrgId);
+
+    setControls((prev) => [...createStarterControls(newOrgId, selectedFramework), ...prev]);
+
+    setTeamMembers((prev) => [
+      ...prev,
+      {
+        id: Date.now(),
+        orgId: newOrgId,
+        name: `${companyName.trim()} Lead`,
+        email: workEmail.trim(),
+        role: 'Super Admin',
+        status: 'Active',
+      },
+    ]);
+
     setNewFramework(selectedFramework);
     setView('dashboard');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -86,11 +180,12 @@ export default function Home() {
 
   const handleAddMember = (e) => {
     e.preventDefault();
-    if (!newMemberName || !newMemberEmail) return;
+    if (!newMemberName || !newMemberEmail || !selectedOrgId) return;
     setTeamMembers((prev) => [
       ...prev,
       {
         id: Date.now(),
+        orgId: selectedOrgId,
         name: newMemberName,
         email: newMemberEmail,
         role: newMemberRole,
@@ -113,7 +208,8 @@ export default function Home() {
     setTeamMembers((prev) => prev.filter((m) => m.id !== memberId));
   };
 
-  const handleToggleOrgStatus = (orgId) => {
+  const handleToggleOrgStatus = (e, orgId) => {
+    e.stopPropagation();
     setOrganizations((prev) =>
       prev.map((o) =>
         o.id === orgId ? { ...o, status: o.status === 'Active' ? 'In Review' : 'Active' } : o
@@ -124,7 +220,14 @@ export default function Home() {
   const handleAddControl = async (e) => {
     e.preventDefault();
     if (!newId || !newName) return;
-    const newControl = { id: newId, name: newName, framework: newFramework, status: newStatus };
+    const activeOrgId = selectedOrg?.id || 'ORG-101';
+    const newControl = {
+      orgId: activeOrgId,
+      id: newId,
+      name: newName,
+      framework: newFramework,
+      status: newStatus,
+    };
 
     try {
       const response = await fetch(API_URL, {
@@ -134,16 +237,28 @@ export default function Home() {
       });
       const savedControl = await response.json();
       if (savedControl && savedControl._id) {
-        setControls((prev) => (Array.isArray(prev) ? [...prev, savedControl] : [savedControl]));
+        setControls((prev) => [...prev, { ...savedControl, orgId: activeOrgId }]);
+      } else {
+        setControls((prev) => [...prev, { ...newControl, _id: `${activeOrgId}-${Date.now()}` }]);
       }
       setNewId('');
       setNewName('');
-    } catch (err) {
-      console.log('Error saving control:', err);
+    } catch {
+      setControls((prev) => [...prev, { ...newControl, _id: `${activeOrgId}-${Date.now()}` }]);
+      setNewId('');
+      setNewName('');
     }
   };
 
   const handleStatusChange = async (mongoId, updatedStatus) => {
+    setControls((prev) =>
+      prev.map((c) => (c._id === mongoId ? { ...c, status: updatedStatus } : c))
+    );
+
+    if (String(mongoId).startsWith('ORG-') || String(mongoId).startsWith('api-')) {
+      return;
+    }
+
     try {
       const response = await fetch(`${API_URL}/${mongoId}`, {
         method: 'PUT',
@@ -151,33 +266,51 @@ export default function Home() {
         body: JSON.stringify({ status: updatedStatus }),
       });
       const updatedControl = await response.json();
-      setControls((prev) =>
-        Array.isArray(prev) ? prev.map((c) => (c._id === mongoId ? updatedControl : c)) : []
-      );
+      if (updatedControl && updatedControl._id) {
+        setControls((prev) =>
+          prev.map((c) => (c._id === mongoId ? { ...updatedControl, orgId: c.orgId } : c))
+        );
+      }
     } catch (err) {
       console.log('Error updating status:', err);
     }
   };
 
   const handleDelete = async (mongoId) => {
+    setControls((prev) => prev.filter((c) => c._id !== mongoId));
+
+    if (String(mongoId).startsWith('ORG-') || String(mongoId).startsWith('api-')) {
+      return;
+    }
+
     try {
       await fetch(`${API_URL}/${mongoId}`, { method: 'DELETE' });
-      setControls((prev) => (Array.isArray(prev) ? prev.filter((c) => c._id !== mongoId) : []));
     } catch (err) {
       console.log('Error deleting control:', err);
     }
   };
 
-  const safeControls = Array.isArray(controls) ? controls : [];
-  const filteredControls = filter === 'All'
-    ? safeControls
-    : safeControls.filter((c) => c.status === filter);
+  const selectedOrg =
+    organizations.find((o) => o.id === selectedOrgId) || organizations[0] || null;
 
-  const totalCount = safeControls.length;
-  const compliantCount = safeControls.filter((c) => c.status === 'Compliant').length;
-  const inProgressCount = safeControls.filter((c) => c.status === 'In Progress').length;
-  const nonCompliantCount = safeControls.filter((c) => c.status === 'Non-Compliant').length;
-  const readinessScore = totalCount > 0 ? Math.round((compliantCount / totalCount) * 100) : 0;
+  const safeControls = Array.isArray(controls) ? controls : [];
+  const orgControls = selectedOrg
+    ? safeControls.filter((c) => c.orgId === selectedOrg.id)
+    : safeControls;
+
+  const filteredControls = filter === 'All'
+    ? orgControls
+    : orgControls.filter((c) => c.status === filter);
+
+  const totalCount = orgControls.length;
+  const compliantCount = orgControls.filter((c) => c.status === 'Compliant').length;
+  const inProgressCount = orgControls.filter((c) => c.status === 'In Progress').length;
+  const nonCompliantCount = orgControls.filter((c) => c.status === 'Non-Compliant').length;
+  const orgReadinessScore = totalCount > 0 ? Math.round((compliantCount / totalCount) * 100) : 0;
+
+  const orgTeamMembers = selectedOrg
+    ? teamMembers.filter((m) => m.orgId === selectedOrg.id)
+    : teamMembers;
 
   const frameworkDetails = {
     'SOC 2': {
@@ -209,7 +342,7 @@ export default function Home() {
   const faqs = [
     {
       q: 'How does ComplianceGuard speed up SOC 2 and ISO 27001 readiness?',
-      a: 'It centralizes your compliance controls, highlights readiness gaps instantly, and lets teams update control statuses in real time instead of juggling scattered spreadsheets.',
+      a: 'It centralizes your compliance controls, seeds core starter controls automatically, and lets teams update control statuses in real time instead of juggling scattered spreadsheets.',
     },
     {
       q: 'Can our team track multiple frameworks in one workspace?',
@@ -217,17 +350,13 @@ export default function Home() {
     },
     {
       q: 'What can administrators manage inside the Admin Panel?',
-      a: 'Admins can view onboarded organizations, toggle workspace review status, manage team members and roles (Super Admin, Auditor, Editor), and monitor overall audit readiness.',
+      a: 'Admins can switch between onboarded organizations, toggle workspace status, manage team members and roles (Super Admin, Auditor, Editor), and monitor live readiness scores.',
     },
   ];
 
-  // ==========================================
-  // VIEW 1: ENTERPRISE LANDING & ONBOARDING PAGE
-  // ==========================================
   if (view === 'landing') {
     return (
       <div className="min-h-screen bg-gray-950 text-white selection:bg-blue-600 selection:text-white">
-        {/* Navbar */}
         <nav className="sticky top-0 z-50 bg-gray-950/90 backdrop-blur-md border-b border-gray-800">
           <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
             <div className="flex items-center gap-2.5">
@@ -269,7 +398,6 @@ export default function Home() {
           </div>
         </nav>
 
-        {/* Hero + Onboarding Section */}
         <section className="max-w-7xl mx-auto px-6 py-16 lg:py-20 grid lg:grid-cols-12 gap-12 items-center border-b border-gray-800/80">
           <div className="lg:col-span-7">
             <div className="inline-flex items-center gap-2 bg-blue-950/80 border border-blue-700/40 text-blue-300 text-xs font-semibold px-3.5 py-1.5 rounded-full mb-6">
@@ -300,7 +428,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Metrics */}
             <div className="mt-12 pt-8 border-t border-gray-800 grid grid-cols-3 gap-6">
               <div>
                 <p className="text-2xl sm:text-3xl font-extrabold text-white">3x</p>
@@ -317,7 +444,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Right Onboarding Card */}
           <div id="onboarding" className="lg:col-span-5 bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl">
             <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Customer Onboarding</span>
             <h2 className="text-2xl font-bold text-white mt-1">Launch Your Workspace</h2>
@@ -328,7 +454,7 @@ export default function Home() {
                 <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">Organization Name *</label>
                 <input
                   type="text"
-                  placeholder="e.g. FinScale Cloud Inc"
+                  placeholder="e.g. Ganesh Tech"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
                   className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none"
@@ -414,7 +540,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Social Proof / Enterprise Logos Strip */}
         <section className="border-b border-gray-800/80 bg-gray-900/30 py-8 px-6">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
             <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
@@ -430,7 +555,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 3-Step Workflow Section */}
         <section id="workflow" className="max-w-7xl mx-auto px-6 py-20 border-b border-gray-800/80">
           <div className="text-center max-w-2xl mx-auto mb-14">
             <span className="text-xs font-bold uppercase tracking-widest text-blue-400">How It Works</span>
@@ -447,7 +571,7 @@ export default function Home() {
               {
                 step: '02',
                 title: 'Map & Monitor Controls',
-                desc: 'Add security controls, assign compliance states, and identify gaps across your infrastructure in real time.',
+                desc: 'Start with pre-configured baseline controls (c1–c4), update compliance states, and customize rules for your stack.',
               },
               {
                 step: '03',
@@ -466,7 +590,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Interactive Framework Switcher Section */}
         <section id="frameworks" className="max-w-7xl mx-auto px-6 py-20 border-b border-gray-800/80">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
             <div>
@@ -513,7 +636,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* FAQ Section */}
         <section id="faq" className="max-w-4xl mx-auto px-6 py-20">
           <div className="text-center mb-12">
             <span className="text-xs font-bold uppercase tracking-widest text-blue-400">FAQ</span>
@@ -540,7 +662,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Footer */}
         <footer className="border-t border-gray-800 py-8 px-6 text-sm text-gray-500">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
             <span className="font-semibold text-gray-300">ComplianceGuard • SOC 2 & ISO 27001 Readiness Portal</span>
@@ -551,14 +672,10 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // VIEW 2: ADMIN PANEL
-  // ==========================================
   if (view === 'admin') {
     return (
       <main className="min-h-screen bg-gray-950 text-white p-6 sm:p-8">
         <div className="max-w-6xl mx-auto space-y-8">
-          {/* Admin Header */}
           <header className="border-b border-gray-800 pb-5 flex flex-wrap justify-between items-center gap-4">
             <div>
               <span className="text-xs font-bold uppercase tracking-widest text-cyan-400">Governance & Administration</span>
@@ -583,11 +700,38 @@ export default function Home() {
             </div>
           </header>
 
-          {/* Admin KPI Summary Cards */}
+          {selectedOrg && (
+            <div className="bg-blue-950/30 border border-blue-700/40 rounded-2xl p-4 flex flex-wrap justify-between items-center gap-3">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">
+                  Selected Organization Workspace
+                </span>
+                <p className="text-lg font-bold text-white mt-0.5">
+                  {selectedOrg.name}{' '}
+                  <span className="text-xs font-mono text-blue-300 ml-2">({selectedOrg.id})</span>
+                </p>
+              </div>
+              <div className="text-xs text-gray-300 flex flex-wrap gap-3">
+                <span className="bg-gray-900 border border-gray-700 px-3 py-1 rounded-lg">
+                  Framework: <strong>{selectedOrg.framework}</strong>
+                </span>
+                <span className="bg-gray-900 border border-gray-700 px-3 py-1 rounded-lg">
+                  Cloud: <strong>{selectedOrg.cloud}</strong>
+                </span>
+                <span className="bg-gray-900 border border-gray-700 px-3 py-1 rounded-lg">
+                  Team Size: <strong>{orgTeamMembers.length}</strong>
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="bg-gray-900 border border-gray-800 p-4 rounded-xl">
               <p className="text-xs text-gray-400 uppercase font-semibold">Readiness Score</p>
-              <p className="text-2xl font-extrabold text-cyan-400 mt-1">{readinessScore}%</p>
+              <p className="text-2xl font-extrabold text-cyan-400 mt-1">{orgReadinessScore}%</p>
+              {selectedOrg && (
+                <p className="text-[11px] text-gray-500 mt-0.5 truncate">{selectedOrg.name}</p>
+              )}
             </div>
             <div className="bg-gray-900 border border-gray-800 p-4 rounded-xl">
               <p className="text-xs text-gray-400 uppercase font-semibold">Total Controls</p>
@@ -607,12 +751,13 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Onboarded Organizations Table */}
           <section className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
               <div>
                 <h2 className="text-xl font-bold text-white">Onboarded Organizations</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Workspaces registered via Customer Onboarding</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Click any organization row or Select button to view its score, controls, and team members
+                </p>
               </div>
               <span className="text-xs bg-blue-950 text-blue-300 border border-blue-800/60 px-3 py-1 rounded-full font-semibold">
                 {organizations.length} Workspaces
@@ -633,43 +778,80 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800/70 text-sm">
-                  {organizations.map((org) => (
-                    <tr key={org.id} className="hover:bg-gray-800/40">
-                      <td className="py-3 px-3 font-mono text-xs text-blue-400">{org.id}</td>
-                      <td className="py-3 px-3 font-semibold text-gray-100">{org.name}</td>
-                      <td className="py-3 px-3 text-gray-400">{org.email}</td>
-                      <td className="py-3 px-3 text-gray-300">{org.framework}</td>
-                      <td className="py-3 px-3 text-gray-300">{org.cloud}</td>
-                      <td className="py-3 px-3">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                            org.status === 'Active'
-                              ? 'bg-green-950 text-green-300 border border-green-800/60'
-                              : 'bg-yellow-950 text-yellow-300 border border-yellow-800/60'
-                          }`}
-                        >
-                          {org.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <button
-                          onClick={() => handleToggleOrgStatus(org.id)}
-                          className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-3 py-1 rounded-lg transition"
-                        >
-                          Toggle Status
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {organizations.map((org) => {
+                    const isSelected = selectedOrg?.id === org.id;
+                    return (
+                      <tr
+                        key={org.id}
+                        onClick={() => setSelectedOrgId(org.id)}
+                        className={`cursor-pointer transition ${
+                          isSelected
+                            ? 'bg-blue-950/50 border-l-4 border-l-cyan-400'
+                            : 'hover:bg-gray-800/40'
+                        }`}
+                      >
+                        <td className="py-3 px-3 font-mono text-xs text-blue-400">{org.id}</td>
+                        <td className="py-3 px-3 font-semibold text-gray-100">
+                          {org.name}
+                          {isSelected && (
+                            <span className="ml-2 text-[10px] uppercase bg-cyan-950 text-cyan-300 border border-cyan-700/50 px-2 py-0.5 rounded-full">
+                              Active View
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-gray-400">{org.email}</td>
+                        <td className="py-3 px-3 text-gray-300">{org.framework}</td>
+                        <td className="py-3 px-3 text-gray-300">{org.cloud}</td>
+                        <td className="py-3 px-3">
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                              org.status === 'Active'
+                                ? 'bg-green-950 text-green-300 border border-green-800/60'
+                                : 'bg-yellow-950 text-yellow-300 border border-yellow-800/60'
+                            }`}
+                          >
+                            {org.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right space-x-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedOrgId(org.id);
+                            }}
+                            className={`text-xs px-3 py-1 rounded-lg transition font-semibold ${
+                              isSelected
+                                ? 'bg-cyan-600 text-white'
+                                : 'bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-700/50'
+                            }`}
+                          >
+                            {isSelected ? 'Selected' : 'Select'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleOrgStatus(e, org.id)}
+                            className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-3 py-1 rounded-lg transition"
+                          >
+                            Toggle Status
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </section>
 
-          {/* Team & Role Access Management */}
           <section className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
-            <h2 className="text-xl font-bold text-white mb-1">Team & Role Access Management</h2>
-            <p className="text-xs text-gray-400 mb-5">Assign compliance roles and manage account access</p>
+            <h2 className="text-xl font-bold text-white mb-1">
+              Team & Role Access Management {selectedOrg ? `— ${selectedOrg.name}` : ''}
+            </h2>
+            <p className="text-xs text-gray-400 mb-5">
+              Assign compliance roles and manage account access for{' '}
+              {selectedOrg ? selectedOrg.name : 'the selected organization'}
+            </p>
 
             <form onSubmit={handleAddMember} className="grid sm:grid-cols-4 gap-3 mb-6">
               <input
@@ -717,42 +899,50 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800/70 text-sm">
-                  {teamMembers.map((member) => (
-                    <tr key={member.id} className="hover:bg-gray-800/40">
-                      <td className="py-3 px-3 font-medium text-gray-100">{member.name}</td>
-                      <td className="py-3 px-3 text-gray-400">{member.email}</td>
-                      <td className="py-3 px-3">
-                        <span className="bg-blue-950/70 text-blue-300 border border-blue-800/50 px-2.5 py-0.5 rounded-md text-xs font-semibold">
-                          {member.role}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                            member.status === 'Active'
-                              ? 'bg-green-950 text-green-300 border border-green-800/60'
-                              : 'bg-red-950 text-red-300 border border-red-800/60'
-                          }`}
-                        >
-                          {member.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-right space-x-2">
-                        <button
-                          onClick={() => handleToggleMemberStatus(member.id)}
-                          className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-2.5 py-1 rounded-lg transition"
-                        >
-                          {member.status === 'Active' ? 'Suspend' : 'Activate'}
-                        </button>
-                        <button
-                          onClick={() => handleDeleteMember(member.id)}
-                          className="text-xs bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-700/50 px-2.5 py-1 rounded-lg transition"
-                        >
-                          Remove
-                        </button>
+                  {orgTeamMembers.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="py-6 text-center text-gray-400">
+                        No team members assigned to {selectedOrg?.name || 'this organization'} yet. Add one above!
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    orgTeamMembers.map((member) => (
+                      <tr key={member.id} className="hover:bg-gray-800/40">
+                        <td className="py-3 px-3 font-medium text-gray-100">{member.name}</td>
+                        <td className="py-3 px-3 text-gray-400">{member.email}</td>
+                        <td className="py-3 px-3">
+                          <span className="bg-blue-950/70 text-blue-300 border border-blue-800/50 px-2.5 py-0.5 rounded-md text-xs font-semibold">
+                            {member.role}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                              member.status === 'Active'
+                                ? 'bg-green-950 text-green-300 border border-green-800/60'
+                                : 'bg-red-950 text-red-300 border border-red-800/60'
+                            }`}
+                          >
+                            {member.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right space-x-2">
+                          <button
+                            onClick={() => handleToggleMemberStatus(member.id)}
+                            className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-2.5 py-1 rounded-lg transition"
+                          >
+                            {member.status === 'Active' ? 'Suspend' : 'Activate'}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteMember(member.id)}
+                            className="text-xs bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-700/50 px-2.5 py-1 rounded-lg transition"
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -762,9 +952,6 @@ export default function Home() {
     );
   }
 
-  // ==========================================
-  // VIEW 3: MAIN COMPLIANCE DASHBOARD PORTAL
-  // ==========================================
   return (
     <main className="min-h-screen bg-gray-900 text-white p-8">
       <div className="max-w-5xl mx-auto">
@@ -772,8 +959,8 @@ export default function Home() {
           <div>
             <h1 className="text-3xl font-bold text-blue-400">Enterprise SOC 2 & ISO 27001 Readiness Portal</h1>
             <p className="text-gray-400 mt-1 text-sm">
-              {companyName
-                ? `Workspace: ${companyName} (${companySize}) • Cloud: ${cloudProvider} • Target: ${targetTimeline} • Contact: ${workEmail}`
+              {selectedOrg
+                ? `Active Workspace: ${selectedOrg.name} (${selectedOrg.id}) • Framework: ${selectedOrg.framework} • Cloud: ${selectedOrg.cloud}`
                 : 'Track, document, and manage security compliance controls.'}
             </p>
           </div>
@@ -793,11 +980,10 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Add Control Form */}
         <form onSubmit={handleAddControl} className="bg-gray-800 p-4 rounded-xl mb-6 border border-gray-700 flex flex-wrap gap-3 items-center">
           <input
             type="text"
-            placeholder="Control ID (e.g. CC1.1)"
+            placeholder="Control ID (e.g. c5 or CC1.1)"
             value={newId}
             onChange={(e) => setNewId(e.target.value)}
             className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white flex-1"
@@ -833,7 +1019,6 @@ export default function Home() {
           </button>
         </form>
 
-        {/* Status Filter Buttons */}
         <div className="flex gap-4 mb-6">
           {['All', 'Compliant', 'In Progress', 'Non-Compliant'].map((status) => (
             <button
@@ -848,7 +1033,6 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Controls Table */}
         <div className="bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -863,7 +1047,7 @@ export default function Home() {
             <tbody className="divide-y divide-gray-700">
               {filteredControls.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="p-6 text-center text-gray-400">No controls found in database. Add one above!</td>
+                  <td colSpan="5" className="p-6 text-center text-gray-400">No controls found for this workspace. Add one above!</td>
                 </tr>
               ) : (
                 filteredControls.map((item) => (
