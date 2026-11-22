@@ -736,7 +736,7 @@ export default function Home() {
                   <label className="block text-xs font-semibold text-gray-300 uppercase mb-1.5">Organization Name *</label>
                   <input
                     type="text"
-                    placeholder="e.g. Ganesh Tech"
+                    placeholder="e.g. Acme Cloud Inc"
                     value={companyName}
                     onChange={(e) => setCompanyName(e.target.value)}
                     className="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-white focus:border-blue-500 outline-none"
