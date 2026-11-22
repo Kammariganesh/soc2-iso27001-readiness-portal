@@ -1,14 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-const API_URL = 'https://soc2-iso27001-readiness-portal.onrender.com/api/controls';
-
-const STORAGE_KEYS = {
-  orgs: 'complianceguard_organizations_v1',
-  members: 'complianceguard_team_members_v1',
-  controls: 'complianceguard_controls_v1',
-  selectedOrg: 'complianceguard_selected_org_v1',
-};
+const API_BASE = 'https://soc2-iso27001-readiness-portal.onrender.com/api';
 
 const DEFAULT_ORGANIZATIONS = [
   {
@@ -30,11 +23,11 @@ const DEFAULT_ORGANIZATIONS = [
 ];
 
 const DEFAULT_TEAM_MEMBERS = [
-  { id: 1, orgId: 'ORG-101', name: 'Admin Lead', email: 'admin@complianceguard.io', role: 'Super Admin', status: 'Active' },
-  { id: 2, orgId: 'ORG-101', name: 'Security Auditor', email: 'auditor@complianceguard.io', role: 'Auditor', status: 'Active' },
-  { id: 3, orgId: 'ORG-101', name: 'Compliance Analyst', email: 'analyst@complianceguard.io', role: 'Editor', status: 'Active' },
-  { id: 4, orgId: 'ORG-102', name: 'DataPulse Admin', email: 'admin@datapulse.dev', role: 'Super Admin', status: 'Active' },
-  { id: 5, orgId: 'ORG-102', name: 'ISO Auditor', email: 'auditor@datapulse.dev', role: 'Auditor', status: 'Active' },
+  { _id: 'm1', orgId: 'ORG-101', name: 'Admin Lead', email: 'admin@complianceguard.io', role: 'Super Admin', status: 'Active' },
+  { _id: 'm2', orgId: 'ORG-101', name: 'Security Auditor', email: 'auditor@complianceguard.io', role: 'Auditor', status: 'Active' },
+  { _id: 'm3', orgId: 'ORG-101', name: 'Compliance Analyst', email: 'analyst@complianceguard.io', role: 'Editor', status: 'Active' },
+  { _id: 'm4', orgId: 'ORG-102', name: 'DataPulse Admin', email: 'admin@datapulse.dev', role: 'Super Admin', status: 'Active' },
+  { _id: 'm5', orgId: 'ORG-102', name: 'ISO Auditor', email: 'auditor@datapulse.dev', role: 'Auditor', status: 'Active' },
 ];
 
 const createStarterControls = (orgId, framework = 'SOC 2') => [
@@ -44,26 +37,10 @@ const createStarterControls = (orgId, framework = 'SOC 2') => [
   { _id: `${orgId}-c4`, orgId, id: 'c4', name: 'System Logging & Monitoring', framework, status: 'Compliant' },
 ];
 
-const DEFAULT_CONTROLS = [
-  ...createStarterControls('ORG-101', 'SOC 2'),
-  ...createStarterControls('ORG-102', 'ISO 27001'),
-];
-
-function readStorage(key, fallback) {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    return parsed ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 export default function Home() {
   const [view, setView] = useState('landing');
   const [activeTab, setActiveTab] = useState('SOC 2');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [companyName, setCompanyName] = useState('');
   const [workEmail, setWorkEmail] = useState('');
@@ -72,18 +49,13 @@ export default function Home() {
   const [cloudProvider, setCloudProvider] = useState('AWS');
   const [targetTimeline, setTargetTimeline] = useState('Within 3 Months');
 
-  const [organizations, setOrganizations] = useState(() =>
-    readStorage(STORAGE_KEYS.orgs, DEFAULT_ORGANIZATIONS)
-  );
-  const [selectedOrgId, setSelectedOrgId] = useState(() =>
-    readStorage(STORAGE_KEYS.selectedOrg, 'ORG-101')
-  );
-  const [teamMembers, setTeamMembers] = useState(() =>
-    readStorage(STORAGE_KEYS.members, DEFAULT_TEAM_MEMBERS)
-  );
-  const [controls, setControls] = useState(() =>
-    readStorage(STORAGE_KEYS.controls, DEFAULT_CONTROLS)
-  );
+  const [organizations, setOrganizations] = useState(DEFAULT_ORGANIZATIONS);
+  const [selectedOrgId, setSelectedOrgId] = useState('ORG-101');
+  const [teamMembers, setTeamMembers] = useState(DEFAULT_TEAM_MEMBERS);
+  const [controls, setControls] = useState(() => [
+    ...createStarterControls('ORG-101', 'SOC 2'),
+    ...createStarterControls('ORG-102', 'ISO 27001'),
+  ]);
 
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberEmail, setNewMemberEmail] = useState('');
@@ -98,55 +70,94 @@ export default function Home() {
   const [newStatus, setNewStatus] = useState('In Progress');
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.orgs, JSON.stringify(organizations));
-    } catch {}
-  }, [organizations]);
+    async function loadPortalData() {
+      try {
+        const [orgsRes, membersRes, controlsRes] = await Promise.all([
+          fetch(`${API_BASE}/organizations`),
+          fetch(`${API_BASE}/members`),
+          fetch(`${API_BASE}/controls`),
+        ]);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.members, JSON.stringify(teamMembers));
-    } catch {}
-  }, [teamMembers]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.controls, JSON.stringify(controls));
-    } catch {}
-  }, [controls]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.selectedOrg, JSON.stringify(selectedOrgId));
-    } catch {}
-  }, [selectedOrgId]);
-
-  useEffect(() => {
-    fetch(API_URL)
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          const taggedApiControls = data.map((item, idx) => ({
-            ...item,
-            _id: item._id || `api-${idx}`,
-            orgId: item.orgId || 'ORG-101',
-          }));
-          setControls((prev) => {
-            const otherOrgControls = prev.filter((c) => c.orgId !== 'ORG-101');
-            return [...taggedApiControls, ...otherOrgControls];
-          });
+        if (orgsRes.ok) {
+          const orgsData = await orgsRes.json();
+          if (Array.isArray(orgsData) && orgsData.length > 0) {
+            setOrganizations(orgsData);
+            setSelectedOrgId((prev) =>
+              orgsData.some((o) => o.id === prev) ? prev : orgsData[0].id
+            );
+          }
         }
-      })
-      .catch(() => {});
+
+        if (membersRes.ok) {
+          const membersData = await membersRes.json();
+          if (Array.isArray(membersData) && membersData.length > 0) {
+            setTeamMembers(membersData);
+          }
+        }
+
+        if (controlsRes.ok) {
+          const controlsData = await controlsRes.json();
+          if (Array.isArray(controlsData) && controlsData.length > 0) {
+            setControls(
+              controlsData.map((c) => ({
+                ...c,
+                orgId: c.orgId || 'ORG-101',
+              }))
+            );
+          }
+        }
+      } catch (err) {
+        console.log('Using local fallback until backend deploys:', err);
+      }
+    }
+
+    loadPortalData();
   }, []);
 
-  const handleOnboardingSubmit = (e) => {
+  const handleOnboardingSubmit = async (e) => {
     e.preventDefault();
-    if (!companyName || !workEmail) return;
+    if (!companyName || !workEmail || isSubmitting) return;
+    setIsSubmitting(true);
 
+    try {
+      const response = await fetch(`${API_BASE}/organizations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: companyName.trim(),
+          email: workEmail.trim(),
+          framework: selectedFramework,
+          cloud: cloudProvider,
+          companySize,
+          targetTimeline,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.organization) {
+          setOrganizations((prev) => [data.organization, ...prev]);
+          setSelectedOrgId(data.organization.id);
+          if (Array.isArray(data.controls)) {
+            setControls((prev) => [...data.controls, ...prev]);
+          }
+          if (data.member) {
+            setTeamMembers((prev) => [...prev, data.member]);
+          }
+          setNewFramework(selectedFramework);
+          setView('dashboard');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          setIsSubmitting(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.log('Falling back to local state creation:', err);
+    }
+
+    // Fallback if backend hasn't redeployed new routes yet
     const nextNum = 101 + organizations.length;
     const newOrgId = `ORG-${nextNum}`;
-
     const newOrg = {
       id: newOrgId,
       name: companyName.trim(),
@@ -158,13 +169,11 @@ export default function Home() {
 
     setOrganizations((prev) => [newOrg, ...prev]);
     setSelectedOrgId(newOrgId);
-
     setControls((prev) => [...createStarterControls(newOrgId, selectedFramework), ...prev]);
-
     setTeamMembers((prev) => [
       ...prev,
       {
-        id: Date.now(),
+        _id: `local-m-${Date.now()}`,
         orgId: newOrgId,
         name: `${companyName.trim()} Lead`,
         email: workEmail.trim(),
@@ -176,45 +185,86 @@ export default function Home() {
     setNewFramework(selectedFramework);
     setView('dashboard');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    setIsSubmitting(false);
   };
 
-  const handleAddMember = (e) => {
+  const handleAddMember = async (e) => {
     e.preventDefault();
     if (!newMemberName || !newMemberEmail || !selectedOrgId) return;
-    setTeamMembers((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        orgId: selectedOrgId,
-        name: newMemberName,
-        email: newMemberEmail,
-        role: newMemberRole,
-        status: 'Active',
-      },
-    ]);
+
+    const payload = {
+      orgId: selectedOrgId,
+      name: newMemberName.trim(),
+      email: newMemberEmail.trim(),
+      role: newMemberRole,
+      status: 'Active',
+    };
+
+    try {
+      const response = await fetch(`${API_BASE}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (response.ok) {
+        const savedMember = await response.json();
+        setTeamMembers((prev) => [...prev, savedMember]);
+        setNewMemberName('');
+        setNewMemberEmail('');
+        return;
+      }
+    } catch {}
+
+    setTeamMembers((prev) => [...prev, { ...payload, _id: `local-m-${Date.now()}` }]);
     setNewMemberName('');
     setNewMemberEmail('');
   };
 
-  const handleToggleMemberStatus = (memberId) => {
+  const handleToggleMemberStatus = async (member) => {
+    const memberKey = member._id || member.id;
+    const nextStatus = member.status === 'Active' ? 'Suspended' : 'Active';
+
     setTeamMembers((prev) =>
-      prev.map((m) =>
-        m.id === memberId ? { ...m, status: m.status === 'Active' ? 'Suspended' : 'Active' } : m
-      )
+      prev.map((m) => ((m._id || m.id) === memberKey ? { ...m, status: nextStatus } : m))
     );
+
+    if (member._id && !String(member._id).startsWith('local-') && String(member._id).length > 5) {
+      try {
+        await fetch(`${API_BASE}/members/${member._id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: nextStatus }),
+        });
+      } catch {}
+    }
   };
 
-  const handleDeleteMember = (memberId) => {
-    setTeamMembers((prev) => prev.filter((m) => m.id !== memberId));
+  const handleDeleteMember = async (member) => {
+    const memberKey = member._id || member.id;
+    setTeamMembers((prev) => prev.filter((m) => (m._id || m.id) !== memberKey));
+
+    if (member._id && !String(member._id).startsWith('local-') && String(member._id).length > 5) {
+      try {
+        await fetch(`${API_BASE}/members/${member._id}`, { method: 'DELETE' });
+      } catch {}
+    }
   };
 
-  const handleToggleOrgStatus = (e, orgId) => {
+  const handleToggleOrgStatus = async (e, org) => {
     e.stopPropagation();
+    const nextStatus = org.status === 'Active' ? 'In Review' : 'Active';
+
     setOrganizations((prev) =>
-      prev.map((o) =>
-        o.id === orgId ? { ...o, status: o.status === 'Active' ? 'In Review' : 'Active' } : o
-      )
+      prev.map((o) => (o.id === org.id ? { ...o, status: nextStatus } : o))
     );
+
+    try {
+      await fetch(`${API_BASE}/organizations/${org.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+    } catch {}
   };
 
   const handleAddControl = async (e) => {
@@ -230,7 +280,7 @@ export default function Home() {
     };
 
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetch(`${API_BASE}/controls`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newControl),
@@ -255,12 +305,10 @@ export default function Home() {
       prev.map((c) => (c._id === mongoId ? { ...c, status: updatedStatus } : c))
     );
 
-    if (String(mongoId).startsWith('ORG-') || String(mongoId).startsWith('api-')) {
-      return;
-    }
+    if (String(mongoId).startsWith('ORG-')) return;
 
     try {
-      const response = await fetch(`${API_URL}/${mongoId}`, {
+      const response = await fetch(`${API_BASE}/controls/${mongoId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: updatedStatus }),
@@ -279,12 +327,10 @@ export default function Home() {
   const handleDelete = async (mongoId) => {
     setControls((prev) => prev.filter((c) => c._id !== mongoId));
 
-    if (String(mongoId).startsWith('ORG-') || String(mongoId).startsWith('api-')) {
-      return;
-    }
+    if (String(mongoId).startsWith('ORG-')) return;
 
     try {
-      await fetch(`${API_URL}/${mongoId}`, { method: 'DELETE' });
+      await fetch(`${API_BASE}/controls/${mongoId}`, { method: 'DELETE' });
     } catch (err) {
       console.log('Error deleting control:', err);
     }
@@ -311,6 +357,42 @@ export default function Home() {
   const orgTeamMembers = selectedOrg
     ? teamMembers.filter((m) => m.orgId === selectedOrg.id)
     : teamMembers;
+
+  const handleExportAuditReport = () => {
+    if (!selectedOrg) return;
+
+    const lines = [
+      ['ComplianceGuard Audit Readiness Report'],
+      ['Organization', selectedOrg.name],
+      ['Workspace ID', selectedOrg.id],
+      ['Primary Contact', selectedOrg.email],
+      ['Framework', selectedOrg.framework],
+      ['Cloud Provider', selectedOrg.cloud],
+      ['Workspace Status', selectedOrg.status],
+      ['Readiness Score', `${orgReadinessScore}%`],
+      ['Total Controls', totalCount],
+      ['Compliant', compliantCount],
+      ['In Progress', inProgressCount],
+      ['Non-Compliant', nonCompliantCount],
+      [],
+      ['CONTROL ID', 'CONTROL NAME', 'FRAMEWORK', 'STATUS'],
+      ...orgControls.map((c) => [c.id, `"${String(c.name).replace(/"/g, '""')}"`, c.framework, c.status]),
+      [],
+      ['TEAM MEMBER', 'EMAIL', 'ROLE', 'STATUS'],
+      ...orgTeamMembers.map((m) => [`"${String(m.name).replace(/"/g, '""')}"`, m.email, m.role, m.status]),
+    ];
+
+    const csvContent = lines.map((row) => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${selectedOrg.name.replace(/\s+/g, '_')}_Audit_Readiness_Report.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const frameworkDetails = {
     'SOC 2': {
@@ -342,7 +424,7 @@ export default function Home() {
   const faqs = [
     {
       q: 'How does ComplianceGuard speed up SOC 2 and ISO 27001 readiness?',
-      a: 'It centralizes your compliance controls, seeds core starter controls automatically, and lets teams update control statuses in real time instead of juggling scattered spreadsheets.',
+      a: 'It centralizes your compliance controls in MongoDB, seeds core starter controls automatically, and lets teams update control statuses in real time instead of juggling scattered spreadsheets.',
     },
     {
       q: 'Can our team track multiple frameworks in one workspace?',
@@ -350,7 +432,7 @@ export default function Home() {
     },
     {
       q: 'What can administrators manage inside the Admin Panel?',
-      a: 'Admins can switch between onboarded organizations, toggle workspace status, manage team members and roles (Super Admin, Auditor, Editor), and monitor live readiness scores.',
+      a: 'Admins can switch between onboarded organizations, toggle workspace status, manage team members and roles (Super Admin, Auditor, Editor), and export CSV audit readiness reports.',
     },
   ];
 
@@ -532,9 +614,10 @@ export default function Home() {
 
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold py-3.5 rounded-xl mt-2 transition"
+                disabled={isSubmitting}
+                className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 disabled:opacity-60 text-white font-semibold py-3.5 rounded-xl mt-2 transition"
               >
-                Complete Onboarding & Launch Portal →
+                {isSubmitting ? 'Creating Workspace...' : 'Complete Onboarding & Launch Portal →'}
               </button>
             </form>
           </div>
@@ -576,7 +659,7 @@ export default function Home() {
               {
                 step: '03',
                 title: 'Stay Audit-Ready',
-                desc: 'Filter compliant vs. non-compliant controls anytime so security leads and auditors always have an up-to-date view.',
+                desc: 'Filter compliant vs. non-compliant controls anytime and export CSV readiness reports for auditors.',
               },
             ].map((item) => (
               <div key={item.step} className="bg-gray-900 border border-gray-800 p-7 rounded-2xl">
@@ -684,7 +767,13 @@ export default function Home() {
                 Manage onboarded organizations, team access roles, and overall audit readiness metrics.
               </p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={handleExportAuditReport}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
+              >
+                ↓ Export Audit Report (CSV)
+              </button>
               <button
                 onClick={() => setView('dashboard')}
                 className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
@@ -830,7 +919,7 @@ export default function Home() {
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => handleToggleOrgStatus(e, org.id)}
+                            onClick={(e) => handleToggleOrgStatus(e, org)}
                             className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-3 py-1 rounded-lg transition"
                           >
                             Toggle Status
@@ -907,7 +996,7 @@ export default function Home() {
                     </tr>
                   ) : (
                     orgTeamMembers.map((member) => (
-                      <tr key={member.id} className="hover:bg-gray-800/40">
+                      <tr key={member._id || member.id} className="hover:bg-gray-800/40">
                         <td className="py-3 px-3 font-medium text-gray-100">{member.name}</td>
                         <td className="py-3 px-3 text-gray-400">{member.email}</td>
                         <td className="py-3 px-3">
@@ -928,13 +1017,13 @@ export default function Home() {
                         </td>
                         <td className="py-3 px-3 text-right space-x-2">
                           <button
-                            onClick={() => handleToggleMemberStatus(member.id)}
+                            onClick={() => handleToggleMemberStatus(member)}
                             className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-2.5 py-1 rounded-lg transition"
                           >
                             {member.status === 'Active' ? 'Suspend' : 'Activate'}
                           </button>
                           <button
-                            onClick={() => handleDeleteMember(member.id)}
+                            onClick={() => handleDeleteMember(member)}
                             className="text-xs bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-700/50 px-2.5 py-1 rounded-lg transition"
                           >
                             Remove
@@ -964,7 +1053,13 @@ export default function Home() {
                 : 'Track, document, and manage security compliance controls.'}
             </p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handleExportAuditReport}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
+            >
+              ↓ Export Report
+            </button>
             <button
               onClick={() => setView('admin')}
               className="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
