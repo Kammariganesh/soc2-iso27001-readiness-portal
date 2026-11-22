@@ -31,16 +31,59 @@ const DEFAULT_TEAM_MEMBERS = [
 ];
 
 const createStarterControls = (orgId, framework = 'SOC 2') => [
-  { _id: `${orgId}-c1`, orgId, id: 'c1', name: 'Access Control & MFA', framework, status: 'Compliant' },
-  { _id: `${orgId}-c2`, orgId, id: 'c2', name: 'Database Access & Encryption', framework, status: 'In Progress' },
-  { _id: `${orgId}-c3`, orgId, id: 'c3', name: 'Network Firewall & Segmentation', framework, status: 'Non-Compliant' },
-  { _id: `${orgId}-c4`, orgId, id: 'c4', name: 'System Logging & Monitoring', framework, status: 'Compliant' },
+  {
+    _id: `${orgId}-c1`,
+    orgId,
+    id: 'c1',
+    name: 'Access Control & MFA',
+    framework,
+    status: 'Compliant',
+    evidence: 'MFA enforced across SSO and cloud root/IAM accounts',
+    updatedBy: 'Super Admin',
+  },
+  {
+    _id: `${orgId}-c2`,
+    orgId,
+    id: 'c2',
+    name: 'Database Access & Encryption',
+    framework,
+    status: 'In Progress',
+    evidence: 'AES-256 encryption enabled at rest; TLS 1.3 pending audit sign-off',
+    updatedBy: 'Super Admin',
+  },
+  {
+    _id: `${orgId}-c3`,
+    orgId,
+    id: 'c3',
+    name: 'Network Firewall & Segmentation',
+    framework,
+    status: 'Non-Compliant',
+    evidence: 'Staging VPC security group port rules under review',
+    updatedBy: 'Super Admin',
+  },
+  {
+    _id: `${orgId}-c4`,
+    orgId,
+    id: 'c4',
+    name: 'System Logging & Monitoring',
+    framework,
+    status: 'Compliant',
+    evidence: 'Centralized audit logs retained for 90+ days with alerting',
+    updatedBy: 'Super Admin',
+  },
 ];
 
 export default function Home() {
   const [view, setView] = useState('landing');
   const [activeTab, setActiveTab] = useState('SOC 2');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Active RBAC Role: 'Super Admin' | 'Editor' | 'Auditor'
+  const [currentRole, setCurrentRole] = useState('Super Admin');
+
+  const canManageAdmin = currentRole === 'Super Admin';
+  const canEditControls = currentRole === 'Super Admin' || currentRole === 'Editor';
+  const canDeleteControls = currentRole === 'Super Admin';
 
   const [companyName, setCompanyName] = useState('');
   const [workEmail, setWorkEmail] = useState('');
@@ -68,6 +111,11 @@ export default function Home() {
   const [newName, setNewName] = useState('');
   const [newFramework, setNewFramework] = useState('SOC 2');
   const [newStatus, setNewStatus] = useState('In Progress');
+  const [newEvidence, setNewEvidence] = useState('');
+
+  // Inline Evidence Editor Modal/Row State
+  const [editingEvidenceId, setEditingEvidenceId] = useState(null);
+  const [evidenceDraft, setEvidenceDraft] = useState('');
 
   useEffect(() => {
     async function loadPortalData() {
@@ -102,6 +150,8 @@ export default function Home() {
               controlsData.map((c) => ({
                 ...c,
                 orgId: c.orgId || 'ORG-101',
+                evidence: c.evidence || '',
+                updatedBy: c.updatedBy || 'Super Admin',
               }))
             );
           }
@@ -144,6 +194,7 @@ export default function Home() {
           if (data.member) {
             setTeamMembers((prev) => [...prev, data.member]);
           }
+          setCurrentRole('Super Admin');
           setNewFramework(selectedFramework);
           setView('dashboard');
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -155,7 +206,6 @@ export default function Home() {
       console.log('Falling back to local state creation:', err);
     }
 
-    // Fallback if backend hasn't redeployed new routes yet
     const nextNum = 101 + organizations.length;
     const newOrgId = `ORG-${nextNum}`;
     const newOrg = {
@@ -182,6 +232,7 @@ export default function Home() {
       },
     ]);
 
+    setCurrentRole('Super Admin');
     setNewFramework(selectedFramework);
     setView('dashboard');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -190,7 +241,7 @@ export default function Home() {
 
   const handleAddMember = async (e) => {
     e.preventDefault();
-    if (!newMemberName || !newMemberEmail || !selectedOrgId) return;
+    if (!canManageAdmin || !newMemberName || !newMemberEmail || !selectedOrgId) return;
 
     const payload = {
       orgId: selectedOrgId,
@@ -221,6 +272,7 @@ export default function Home() {
   };
 
   const handleToggleMemberStatus = async (member) => {
+    if (!canManageAdmin) return;
     const memberKey = member._id || member.id;
     const nextStatus = member.status === 'Active' ? 'Suspended' : 'Active';
 
@@ -240,6 +292,7 @@ export default function Home() {
   };
 
   const handleDeleteMember = async (member) => {
+    if (!canManageAdmin) return;
     const memberKey = member._id || member.id;
     setTeamMembers((prev) => prev.filter((m) => (m._id || m.id) !== memberKey));
 
@@ -252,6 +305,7 @@ export default function Home() {
 
   const handleToggleOrgStatus = async (e, org) => {
     e.stopPropagation();
+    if (!canManageAdmin) return;
     const nextStatus = org.status === 'Active' ? 'In Review' : 'Active';
 
     setOrganizations((prev) =>
@@ -269,14 +323,16 @@ export default function Home() {
 
   const handleAddControl = async (e) => {
     e.preventDefault();
-    if (!newId || !newName) return;
+    if (!canEditControls || !newId || !newName) return;
     const activeOrgId = selectedOrg?.id || 'ORG-101';
     const newControl = {
       orgId: activeOrgId,
-      id: newId,
-      name: newName,
+      id: newId.trim(),
+      name: newName.trim(),
       framework: newFramework,
       status: newStatus,
+      evidence: newEvidence.trim() || 'Initial control baseline created',
+      updatedBy: currentRole,
     };
 
     try {
@@ -289,20 +345,35 @@ export default function Home() {
       if (savedControl && savedControl._id) {
         setControls((prev) => [...prev, { ...savedControl, orgId: activeOrgId }]);
       } else {
-        setControls((prev) => [...prev, { ...newControl, _id: `${activeOrgId}-${Date.now()}` }]);
+        setControls((prev) => [
+          ...prev,
+          { ...newControl, _id: `${activeOrgId}-${Date.now()}`, updatedAt: new Date().toISOString() },
+        ]);
       }
       setNewId('');
       setNewName('');
+      setNewEvidence('');
     } catch {
-      setControls((prev) => [...prev, { ...newControl, _id: `${activeOrgId}-${Date.now()}` }]);
+      setControls((prev) => [
+        ...prev,
+        { ...newControl, _id: `${activeOrgId}-${Date.now()}`, updatedAt: new Date().toISOString() },
+      ]);
       setNewId('');
       setNewName('');
+      setNewEvidence('');
     }
   };
 
   const handleStatusChange = async (mongoId, updatedStatus) => {
+    if (!canEditControls) return;
+    const nowIso = new Date().toISOString();
+
     setControls((prev) =>
-      prev.map((c) => (c._id === mongoId ? { ...c, status: updatedStatus } : c))
+      prev.map((c) =>
+        c._id === mongoId
+          ? { ...c, status: updatedStatus, updatedBy: currentRole, updatedAt: nowIso }
+          : c
+      )
     );
 
     if (String(mongoId).startsWith('ORG-')) return;
@@ -311,7 +382,7 @@ export default function Home() {
       const response = await fetch(`${API_BASE}/controls/${mongoId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: updatedStatus }),
+        body: JSON.stringify({ status: updatedStatus, updatedBy: currentRole }),
       });
       const updatedControl = await response.json();
       if (updatedControl && updatedControl._id) {
@@ -324,7 +395,41 @@ export default function Home() {
     }
   };
 
+  const handleSaveEvidence = async (mongoId) => {
+    if (!canEditControls) return;
+    const trimmed = evidenceDraft.trim();
+    const nowIso = new Date().toISOString();
+
+    setControls((prev) =>
+      prev.map((c) =>
+        c._id === mongoId
+          ? { ...c, evidence: trimmed, updatedBy: currentRole, updatedAt: nowIso }
+          : c
+      )
+    );
+    setEditingEvidenceId(null);
+
+    if (String(mongoId).startsWith('ORG-')) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/controls/${mongoId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ evidence: trimmed, updatedBy: currentRole }),
+      });
+      const updatedControl = await response.json();
+      if (updatedControl && updatedControl._id) {
+        setControls((prev) =>
+          prev.map((c) => (c._id === mongoId ? { ...updatedControl, orgId: c.orgId } : c))
+        );
+      }
+    } catch (err) {
+      console.log('Error updating evidence:', err);
+    }
+  };
+
   const handleDelete = async (mongoId) => {
+    if (!canDeleteControls) return;
     setControls((prev) => prev.filter((c) => c._id !== mongoId));
 
     if (String(mongoId).startsWith('ORG-')) return;
@@ -363,6 +468,8 @@ export default function Home() {
 
     const lines = [
       ['ComplianceGuard Audit Readiness Report'],
+      ['Generated By Role', currentRole],
+      ['Generated At', new Date().toLocaleString()],
       ['Organization', selectedOrg.name],
       ['Workspace ID', selectedOrg.id],
       ['Primary Contact', selectedOrg.email],
@@ -375,8 +482,15 @@ export default function Home() {
       ['In Progress', inProgressCount],
       ['Non-Compliant', nonCompliantCount],
       [],
-      ['CONTROL ID', 'CONTROL NAME', 'FRAMEWORK', 'STATUS'],
-      ...orgControls.map((c) => [c.id, `"${String(c.name).replace(/"/g, '""')}"`, c.framework, c.status]),
+      ['CONTROL ID', 'CONTROL NAME', 'FRAMEWORK', 'STATUS', 'AUDIT EVIDENCE / PROOF NOTE', 'LAST UPDATED BY'],
+      ...orgControls.map((c) => [
+        c.id,
+        `"${String(c.name).replace(/"/g, '""')}"`,
+        c.framework,
+        c.status,
+        `"${String(c.evidence || 'No evidence attached').replace(/"/g, '""')}"`,
+        c.updatedBy || 'Super Admin',
+      ]),
       [],
       ['TEAM MEMBER', 'EMAIL', 'ROLE', 'STATUS'],
       ...orgTeamMembers.map((m) => [`"${String(m.name).replace(/"/g, '""')}"`, m.email, m.role, m.status]),
@@ -393,6 +507,23 @@ export default function Home() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
+
+  const RoleSwitcher = () => (
+    <div className="inline-flex items-center gap-2 bg-gray-900 border border-gray-700 px-3 py-1.5 rounded-lg">
+      <span className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold">
+        Role:
+      </span>
+      <select
+        value={currentRole}
+        onChange={(e) => setCurrentRole(e.target.value)}
+        className="bg-transparent text-xs font-bold text-cyan-300 outline-none cursor-pointer"
+      >
+        <option value="Super Admin" className="bg-gray-900 text-white">Super Admin (Full Access)</option>
+        <option value="Editor" className="bg-gray-900 text-white">Editor (Edit Controls)</option>
+        <option value="Auditor" className="bg-gray-900 text-white">Auditor (Read-Only)</option>
+      </select>
+    </div>
+  );
 
   const frameworkDetails = {
     'SOC 2': {
@@ -424,15 +555,15 @@ export default function Home() {
   const faqs = [
     {
       q: 'How does ComplianceGuard speed up SOC 2 and ISO 27001 readiness?',
-      a: 'It centralizes your compliance controls in MongoDB, seeds core starter controls automatically, and lets teams update control statuses in real time instead of juggling scattered spreadsheets.',
+      a: 'It centralizes your compliance controls in MongoDB, seeds core starter controls automatically, tracks audit evidence notes, and lets teams update statuses in real time.',
     },
     {
-      q: 'Can our team track multiple frameworks in one workspace?',
-      a: 'Yes. You can add and filter both SOC 2 and ISO 27001 controls inside the readiness portal and filter by Compliant, In Progress, or Non-Compliant.',
+      q: 'How does Role-Based Access Control (RBAC) work inside the portal?',
+      a: 'Super Admins have full workspace, team, and control management rights; Editors can add controls and update statuses/evidence; Auditors operate in read-only mode with CSV audit report export.',
     },
     {
       q: 'What can administrators manage inside the Admin Panel?',
-      a: 'Admins can switch between onboarded organizations, toggle workspace status, manage team members and roles (Super Admin, Auditor, Editor), and export CSV audit readiness reports.',
+      a: 'Admins can switch between onboarded organizations, toggle workspace status, manage team members and roles, and export audit readiness reports with evidence notes.',
     },
   ];
 
@@ -492,7 +623,7 @@ export default function Home() {
             </h1>
 
             <p className="text-gray-400 text-lg mt-5 leading-relaxed max-w-2xl">
-              Onboard your organization, map security controls, monitor compliance status live, and prepare for audits with clarity across your entire stack.
+              Onboard your organization, map security controls with audit evidence, enforce role-based access, and prepare for audits with clarity across your entire stack.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-4">
@@ -517,11 +648,11 @@ export default function Home() {
               </div>
               <div>
                 <p className="text-2xl sm:text-3xl font-extrabold text-blue-400">100%</p>
-                <p className="text-xs sm:text-sm text-gray-400 mt-1">Live Control Visibility</p>
+                <p className="text-xs sm:text-sm text-gray-400 mt-1">Live Control & Evidence Tracking</p>
               </div>
               <div>
-                <p className="text-2xl sm:text-3xl font-extrabold text-cyan-400">24/7</p>
-                <p className="text-xs sm:text-sm text-gray-400 mt-1">Status & Gap Tracking</p>
+                <p className="text-2xl sm:text-3xl font-extrabold text-cyan-400">RBAC</p>
+                <p className="text-xs sm:text-sm text-gray-400 mt-1">Admin, Editor & Auditor Roles</p>
               </div>
             </div>
           </div>
@@ -653,13 +784,13 @@ export default function Home() {
               },
               {
                 step: '02',
-                title: 'Map & Monitor Controls',
-                desc: 'Start with pre-configured baseline controls (c1–c4), update compliance states, and customize rules for your stack.',
+                title: 'Map Controls & Evidence',
+                desc: 'Start with baseline controls (c1–c4), attach audit evidence notes, and manage updates using role-based access.',
               },
               {
                 step: '03',
                 title: 'Stay Audit-Ready',
-                desc: 'Filter compliant vs. non-compliant controls anytime and export CSV readiness reports for auditors.',
+                desc: 'Switch to Auditor read-only mode anytime and export full CSV readiness reports with evidence trails.',
               },
             ].map((item) => (
               <div key={item.step} className="bg-gray-900 border border-gray-800 p-7 rounded-2xl">
@@ -767,7 +898,8 @@ export default function Home() {
                 Manage onboarded organizations, team access roles, and overall audit readiness metrics.
               </p>
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <RoleSwitcher />
               <button
                 onClick={handleExportAuditReport}
                 className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
@@ -788,6 +920,12 @@ export default function Home() {
               </button>
             </div>
           </header>
+
+          {!canManageAdmin && (
+            <div className="bg-amber-950/50 border border-amber-700/60 text-amber-200 text-xs px-4 py-3 rounded-xl">
+              <strong>RBAC Active ({currentRole} Mode):</strong> Organization status changes and team membership modifications are restricted to <strong>Super Admin</strong>. You can still inspect workspaces and export CSV audit reports.
+            </div>
+          )}
 
           {selectedOrg && (
             <div className="bg-blue-950/30 border border-blue-700/40 rounded-2xl p-4 flex flex-wrap justify-between items-center gap-3">
@@ -919,8 +1057,9 @@ export default function Home() {
                           </button>
                           <button
                             type="button"
+                            disabled={!canManageAdmin}
                             onClick={(e) => handleToggleOrgStatus(e, org)}
-                            className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-3 py-1 rounded-lg transition"
+                            className="text-xs bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed border border-gray-700 text-gray-200 px-3 py-1 rounded-lg transition"
                           >
                             Toggle Status
                           </button>
@@ -947,22 +1086,25 @@ export default function Home() {
                 type="text"
                 placeholder="Member Name"
                 value={newMemberName}
+                disabled={!canManageAdmin}
                 onChange={(e) => setNewMemberName(e.target.value)}
-                className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                className="bg-gray-950 border border-gray-700 disabled:opacity-50 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
                 required
               />
               <input
                 type="email"
                 placeholder="work@email.com"
                 value={newMemberEmail}
+                disabled={!canManageAdmin}
                 onChange={(e) => setNewMemberEmail(e.target.value)}
-                className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
+                className="bg-gray-950 border border-gray-700 disabled:opacity-50 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500"
                 required
               />
               <select
                 value={newMemberRole}
+                disabled={!canManageAdmin}
                 onChange={(e) => setNewMemberRole(e.target.value)}
-                className="bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                className="bg-gray-950 border border-gray-700 disabled:opacity-50 rounded-lg px-3 py-2 text-sm text-white outline-none"
               >
                 <option value="Super Admin">Super Admin</option>
                 <option value="Auditor">Auditor</option>
@@ -970,7 +1112,8 @@ export default function Home() {
               </select>
               <button
                 type="submit"
-                className="bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg px-4 py-2 text-sm transition"
+                disabled={!canManageAdmin}
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold rounded-lg px-4 py-2 text-sm transition"
               >
                 + Add Team Member
               </button>
@@ -1017,14 +1160,16 @@ export default function Home() {
                         </td>
                         <td className="py-3 px-3 text-right space-x-2">
                           <button
+                            disabled={!canManageAdmin}
                             onClick={() => handleToggleMemberStatus(member)}
-                            className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-2.5 py-1 rounded-lg transition"
+                            className="text-xs bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed border border-gray-700 text-gray-200 px-2.5 py-1 rounded-lg transition"
                           >
                             {member.status === 'Active' ? 'Suspend' : 'Activate'}
                           </button>
                           <button
+                            disabled={!canManageAdmin}
                             onClick={() => handleDeleteMember(member)}
-                            className="text-xs bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-700/50 px-2.5 py-1 rounded-lg transition"
+                            className="text-xs bg-red-600/20 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-red-400 hover:text-white border border-red-700/50 px-2.5 py-1 rounded-lg transition"
                           >
                             Remove
                           </button>
@@ -1043,8 +1188,8 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gray-900 text-white p-8">
-      <div className="max-w-5xl mx-auto">
-        <header className="mb-8 border-b border-gray-800 pb-4 flex flex-wrap justify-between items-center gap-4">
+      <div className="max-w-6xl mx-auto">
+        <header className="mb-6 border-b border-gray-800 pb-4 flex flex-wrap justify-between items-center gap-4">
           <div>
             <h1 className="text-3xl font-bold text-blue-400">Enterprise SOC 2 & ISO 27001 Readiness Portal</h1>
             <p className="text-gray-400 mt-1 text-sm">
@@ -1053,7 +1198,8 @@ export default function Home() {
                 : 'Track, document, and manage security compliance controls.'}
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <RoleSwitcher />
             <button
               onClick={handleExportAuditReport}
               className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition"
@@ -1075,106 +1221,185 @@ export default function Home() {
           </div>
         </header>
 
-        <form onSubmit={handleAddControl} className="bg-gray-800 p-4 rounded-xl mb-6 border border-gray-700 flex flex-wrap gap-3 items-center">
-          <input
-            type="text"
-            placeholder="Control ID (e.g. c5 or CC1.1)"
-            value={newId}
-            onChange={(e) => setNewId(e.target.value)}
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white flex-1"
-            required
-          />
-          <input
-            type="text"
-            placeholder="Control Name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white flex-2"
-            required
-          />
-          <select
-            value={newFramework}
-            onChange={(e) => setNewFramework(e.target.value)}
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
-          >
-            <option value="SOC 2">SOC 2</option>
-            <option value="ISO 27001">ISO 27001</option>
-          </select>
-          <select
-            value={newStatus}
-            onChange={(e) => setNewStatus(e.target.value)}
-            className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
-          >
-            <option value="Compliant">Compliant</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Non-Compliant">Non-Compliant</option>
-          </select>
-          <button type="submit" className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg text-sm font-semibold transition">
-            + Add Control
-          </button>
-        </form>
+        {currentRole === 'Auditor' && (
+          <div className="mb-6 bg-amber-950/50 border border-amber-700/60 text-amber-200 text-xs px-4 py-3 rounded-xl">
+            <strong>Auditor Read-Only Mode:</strong> You can inspect all controls, review audit evidence notes, filter statuses, and download CSV audit reports. Editing or deleting controls is disabled.
+          </div>
+        )}
 
-        <div className="flex gap-4 mb-6">
-          {['All', 'Compliant', 'In Progress', 'Non-Compliant'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setFilter(status)}
-              className={`px-4 py-2 rounded-lg font-medium transition ${
-                filter === status ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
+        {canEditControls && (
+          <form onSubmit={handleAddControl} className="bg-gray-800 p-4 rounded-xl mb-6 border border-gray-700 grid sm:grid-cols-12 gap-3 items-center">
+            <input
+              type="text"
+              placeholder="Control ID (e.g. c5)"
+              value={newId}
+              onChange={(e) => setNewId(e.target.value)}
+              className="sm:col-span-2 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+              required
+            />
+            <input
+              type="text"
+              placeholder="Control Name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="sm:col-span-3 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+              required
+            />
+            <input
+              type="text"
+              placeholder="Audit Evidence / Proof Note"
+              value={newEvidence}
+              onChange={(e) => setNewEvidence(e.target.value)}
+              className="sm:col-span-3 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+            />
+            <select
+              value={newFramework}
+              onChange={(e) => setNewFramework(e.target.value)}
+              className="sm:col-span-1 bg-gray-900 border border-gray-700 rounded-lg px-2 py-2 text-sm text-white"
             >
-              {status}
+              <option value="SOC 2">SOC 2</option>
+              <option value="ISO 27001">ISO 27001</option>
+            </select>
+            <select
+              value={newStatus}
+              onChange={(e) => setNewStatus(e.target.value)}
+              className="sm:col-span-2 bg-gray-900 border border-gray-700 rounded-lg px-2 py-2 text-sm text-white"
+            >
+              <option value="Compliant">Compliant</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Non-Compliant">Non-Compliant</option>
+            </select>
+            <button type="submit" className="sm:col-span-1 bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded-lg text-sm font-semibold transition">
+              + Add
             </button>
-          ))}
+          </form>
+        )}
+
+        <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+          <div className="flex gap-3">
+            {['All', 'Compliant', 'In Progress', 'Non-Compliant'].map((status) => (
+              <button
+                key={status}
+                onClick={() => setFilter(status)}
+                className={`px-4 py-2 rounded-lg font-medium text-sm transition ${
+                  filter === status ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-gray-400">
+            Readiness Score: <strong className="text-cyan-400 text-sm">{orgReadinessScore}%</strong> ({compliantCount}/{totalCount} Compliant)
+          </div>
         </div>
 
         <div className="bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-gray-700 text-gray-300 text-sm uppercase tracking-wider">
+              <tr className="bg-gray-700 text-gray-300 text-xs uppercase tracking-wider">
                 <th className="p-4">Control ID</th>
                 <th className="p-4">Control Name</th>
                 <th className="p-4">Framework</th>
+                <th className="p-4">Audit Evidence / Proof</th>
                 <th className="p-4">Status</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-700">
+            <tbody className="divide-y divide-gray-700 text-sm">
               {filteredControls.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="p-6 text-center text-gray-400">No controls found for this workspace. Add one above!</td>
+                  <td colSpan="6" className="p-6 text-center text-gray-400">No controls found for this workspace.</td>
                 </tr>
               ) : (
-                filteredControls.map((item) => (
-                  <tr key={item._id} className="hover:bg-gray-750 transition">
-                    <td className="p-4 font-semibold text-blue-300">{item.id}</td>
-                    <td className="p-4 text-gray-200">{item.name}</td>
-                    <td className="p-4 text-gray-400">{item.framework}</td>
-                    <td className="p-4">
-                      <select
-                        value={item.status}
-                        onChange={(e) => handleStatusChange(item._id, e.target.value)}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer outline-none ${
-                          item.status === 'Compliant' ? 'bg-green-900 text-green-300 border border-green-700' :
-                          item.status === 'In Progress' ? 'bg-yellow-900 text-yellow-300 border border-yellow-700' :
-                          'bg-red-900 text-red-300 border border-red-700'
-                        }`}
-                      >
-                        <option value="Compliant" className="bg-gray-900 text-white">Compliant</option>
-                        <option value="In Progress" className="bg-gray-900 text-white">In Progress</option>
-                        <option value="Non-Compliant" className="bg-gray-900 text-white">Non-Compliant</option>
-                      </select>
-                    </td>
-                    <td className="p-4 text-right">
-                      <button
-                        onClick={() => handleDelete(item._id)}
-                        className="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-3 py-1 rounded-lg text-xs font-semibold border border-red-700/50 transition"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                filteredControls.map((item) => {
+                  const isEditingThis = editingEvidenceId === item._id;
+                  return (
+                    <tr key={item._id} className="hover:bg-gray-750 transition">
+                      <td className="p-4 font-semibold text-blue-300">{item.id}</td>
+                      <td className="p-4 text-gray-200 font-medium">{item.name}</td>
+                      <td className="p-4 text-gray-400">{item.framework}</td>
+                      <td className="p-4 max-w-xs">
+                        {isEditingThis ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={evidenceDraft}
+                              onChange={(e) => setEvidenceDraft(e.target.value)}
+                              placeholder="Enter audit proof or link..."
+                              className="w-full bg-gray-900 border border-blue-500 rounded px-2.5 py-1 text-xs text-white outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEvidence(item._id)}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded text-xs font-semibold"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingEvidenceId(null)}
+                              className="bg-gray-700 hover:bg-gray-600 text-gray-200 px-2 py-1 rounded text-xs"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <p className="text-xs text-gray-300 leading-snug">
+                              {item.evidence || 'No evidence note attached'}
+                            </p>
+                            <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                              <span>Updated by {item.updatedBy || 'Super Admin'}</span>
+                              {canEditControls && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingEvidenceId(item._id);
+                                    setEvidenceDraft(item.evidence || '');
+                                  }}
+                                  className="text-cyan-400 hover:underline font-semibold"
+                                >
+                                  Edit Note
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <select
+                          value={item.status}
+                          disabled={!canEditControls}
+                          onChange={(e) => handleStatusChange(item._id, e.target.value)}
+                          className={`px-3 py-1 rounded-full text-xs font-semibold outline-none disabled:opacity-75 disabled:cursor-not-allowed ${
+                            item.status === 'Compliant' ? 'bg-green-900 text-green-300 border border-green-700' :
+                            item.status === 'In Progress' ? 'bg-yellow-900 text-yellow-300 border border-yellow-700' :
+                            'bg-red-900 text-red-300 border border-red-700'
+                          }`}
+                        >
+                          <option value="Compliant" className="bg-gray-900 text-white">Compliant</option>
+                          <option value="In Progress" className="bg-gray-900 text-white">In Progress</option>
+                          <option value="Non-Compliant" className="bg-gray-900 text-white">Non-Compliant</option>
+                        </select>
+                      </td>
+                      <td className="p-4 text-right">
+                        {canDeleteControls ? (
+                          <button
+                            onClick={() => handleDelete(item._id)}
+                            className="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white px-3 py-1 rounded-lg text-xs font-semibold border border-red-700/50 transition"
+                          >
+                            Delete
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-500">
+                            {currentRole === 'Editor' ? 'Admin Only' : 'View Only'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

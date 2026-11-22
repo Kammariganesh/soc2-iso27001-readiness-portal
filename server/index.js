@@ -55,6 +55,8 @@ const controlSchema = new mongoose.Schema(
     name: { type: String, required: true },
     framework: { type: String, default: 'SOC 2' },
     status: { type: String, default: 'In Progress' },
+    evidence: { type: String, default: '' },
+    updatedBy: { type: String, default: 'Super Admin' },
   },
   { timestamps: true, strict: false }
 );
@@ -63,13 +65,45 @@ const Organization = mongoose.model('Organization', organizationSchema);
 const Member = mongoose.model('Member', memberSchema);
 const Control = mongoose.model('Control', controlSchema);
 
-// Helper: Starter Controls (c1-c4) for any newly created organization
+// Helper: Starter Controls (c1-c4) with baseline audit evidence notes
 function buildStarterControls(orgId, framework = 'SOC 2') {
   return [
-    { orgId, id: 'c1', name: 'Access Control & MFA', framework, status: 'Compliant' },
-    { orgId, id: 'c2', name: 'Database Access & Encryption', framework, status: 'In Progress' },
-    { orgId, id: 'c3', name: 'Network Firewall & Segmentation', framework, status: 'Non-Compliant' },
-    { orgId, id: 'c4', name: 'System Logging & Monitoring', framework, status: 'Compliant' },
+    {
+      orgId,
+      id: 'c1',
+      name: 'Access Control & MFA',
+      framework,
+      status: 'Compliant',
+      evidence: 'MFA enforced across SSO and cloud root/IAM accounts',
+      updatedBy: 'Super Admin',
+    },
+    {
+      orgId,
+      id: 'c2',
+      name: 'Database Access & Encryption',
+      framework,
+      status: 'In Progress',
+      evidence: 'AES-256 encryption enabled at rest; TLS 1.3 in transit pending audit sign-off',
+      updatedBy: 'Super Admin',
+    },
+    {
+      orgId,
+      id: 'c3',
+      name: 'Network Firewall & Segmentation',
+      framework,
+      status: 'Non-Compliant',
+      evidence: 'Staging VPC security group port rules under review',
+      updatedBy: 'Super Admin',
+    },
+    {
+      orgId,
+      id: 'c4',
+      name: 'System Logging & Monitoring',
+      framework,
+      status: 'Compliant',
+      evidence: 'Centralized audit logs retained for 90+ days with alerting',
+      updatedBy: 'Super Admin',
+    },
   ];
 }
 
@@ -232,7 +266,7 @@ app.delete('/api/members/:id', async (req, res) => {
 });
 
 // ==========================================
-// CONTROL ROUTES
+// CONTROL ROUTES (Status + Evidence Notes)
 // ==========================================
 app.get('/api/controls', async (req, res) => {
   try {
@@ -256,9 +290,14 @@ app.post('/api/controls', async (req, res) => {
 
 app.put('/api/controls/:id', async (req, res) => {
   try {
+    const updateFields = {};
+    if (req.body.status !== undefined) updateFields.status = req.body.status;
+    if (req.body.evidence !== undefined) updateFields.evidence = req.body.evidence;
+    if (req.body.updatedBy !== undefined) updateFields.updatedBy = req.body.updatedBy;
+
     const updated = await Control.findByIdAndUpdate(
       req.params.id,
-      { status: req.body.status },
+      updateFields,
       { new: true }
     );
     res.json(updated);
