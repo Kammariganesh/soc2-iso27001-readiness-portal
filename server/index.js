@@ -315,6 +315,65 @@ app.delete('/api/controls/:id', async (req, res) => {
   }
 });
 
+// ==========================================
+// AUTH LOGIN ROUTE
+// ==========================================
+const DEMO_USERS = [
+  {
+    name: 'Ganesh Kumar',
+    email: 'ganesh@complianceguard.app',
+    password: 'Pass@123',
+    role: 'Super Admin',
+  },
+  {
+    name: 'Admin Lead',
+    email: 'admin@complianceguard.io',
+    password: 'Admin@123',
+    role: 'Super Admin',
+  },
+  {
+    name: 'Security Auditor',
+    email: 'auditor@complianceguard.io',
+    password: 'Audit@123',
+    role: 'Auditor',
+  },
+  {
+    name: 'Compliance Analyst',
+    email: 'analyst@complianceguard.io',
+    password: 'Edit@123',
+    role: 'Editor',
+  },
+];
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    const password = (req.body.password || '').trim();
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const matchedUser = DEMO_USERS.find(
+      (u) => u.email.toLowerCase() === email && u.password === password
+    );
+
+    if (!matchedUser) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    return res.json({
+      user: {
+        name: matchedUser.name,
+        email: matchedUser.email,
+        role: req.body.role || matchedUser.role,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

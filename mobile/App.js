@@ -193,7 +193,7 @@ export default function App() {
     if (stepIndex > 0) setStepIndex((prev) => prev - 1);
   };
 
-  const handleAuthSubmit = () => {
+  const handleAuthSubmit = async () => {
     const cleanEmail = authEmail.trim();
     const cleanPassword = authPassword.trim();
     const cleanName = authName.trim();
@@ -209,6 +209,28 @@ export default function App() {
     if (authMode === 'signup' && !cleanName) {
       setAuthError('Please enter your full name to sign up.');
       return;
+    }
+
+    if (authMode === 'login') {
+      try {
+        const res = await fetch(`${API_BASE}/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: cleanEmail,
+            password: cleanPassword,
+            role: authRole,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setAuthError(data.error || 'Invalid email or password.');
+          return;
+        }
+      } catch (err) {
+        setAuthError('Could not reach server to verify credentials.');
+        return;
+      }
     }
 
     const derivedName =
@@ -2036,4 +2058,3 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 });
-
