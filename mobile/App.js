@@ -322,17 +322,23 @@ export default function App() {
 
     setAuthLoading(true);
     setAuthError('');
-    setAuthInfo('');
+    setAuthInfo('Connecting to server (may take 15-20s if server is waking up)...');
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
 
     try {
       const res = await fetch(`${API_BASE}/forgot-password/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail }),
+        signal: controller.signal,
       });
+      clearTimeout(timer);
       const data = await res.json();
 
       if (!res.ok) {
+        setAuthInfo('');
         setAuthError(data.error || 'Could not send OTP.');
         return;
       }
@@ -340,7 +346,13 @@ export default function App() {
       setOtpSent(true);
       setAuthInfo(data.message || '6-digit OTP sent to your email. Check Inbox or Spam.');
     } catch (err) {
-      setAuthError('Server error while sending OTP.');
+      clearTimeout(timer);
+      setAuthInfo('');
+      if (err.name === 'AbortError') {
+        setAuthError('Server took too long to respond. Tap Send OTP again now that server is awake.');
+      } else {
+        setAuthError('Network error while sending OTP. Please try again.');
+      }
     } finally {
       setAuthLoading(false);
     }

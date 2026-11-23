@@ -93,19 +93,24 @@ async function sendOtpEmail(toEmail, otp) {
   }
 
   const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      user: process.env.EMAIL_USER.trim(),
+      pass: process.env.EMAIL_PASS.replace(/\s+/g, ''),
     },
   });
 
   await transporter.sendMail({
-    from: `"ComplianceGuard" <${process.env.EMAIL_USER}>`,
+    from: `"ComplianceGuard" <${process.env.EMAIL_USER.trim()}>`,
     to: toEmail,
-    subject: 'ComplianceGuard Password Reset OTP',
-    text: `Your 6-digit OTP to reset your ComplianceGuard password is: ${otp}. It is valid for 10 minutes.`,
-    html: `<p>Your 6-digit OTP to reset your <b>ComplianceGuard</b> password is:</p><h2>${otp}</h2><p>This code expires in 10 minutes.</p>`,
+    subject: 'ComplianceGuard - Password Reset OTP',
+    text: `Your 6-digit OTP to reset your ComplianceGuard password is: ${otp}. Valid for 10 minutes.`,
+    html: `<p>Your 6-digit OTP to reset your <b>ComplianceGuard</b> password is:</p><h2>${otp}</h2><p>Valid for 10 minutes.</p>`,
   });
 
   return { sent: true };
