@@ -7,7 +7,7 @@ let nodemailer = null;
 try {
   nodemailer = require('nodemailer');
 } catch (e) {
-  console.log('nodemailer not installed yet; run `npm install nodemailer` in server folder for real emails.');
+  console.log('nodemailer not installed; using Resend API if configured.');
 }
 
 const app = express();
@@ -88,32 +88,60 @@ const Control = mongoose.model('Control', controlSchema);
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
 async function sendOtpEmail(toEmail, otp) {
-  if (!nodemailer || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    return { sent: false, reason: 'Email credentials not configured on server.' };
+  // Primary: Resend HTTPS API (Works on Render without SMTP port blocks)
+  if (process.env.RESEND_API_KEY) {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.RESEND_API_KEY.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'ComplianceGuard <onboarding@resend.dev>',
+        to: [toEmail],
+        subject: 'ComplianceGuard - Password Reset OTP',
+        html: `<p>Your 6-digit OTP to reset your <b>ComplianceGuard</b> password is:</p><h2>${otp}</h2><p>Valid for 10 minutes.</p>`,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Resend API error: ${errText}`);
+    }
+
+    return { sent: true };
   }
 
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
-    auth: {
-      user: process.env.EMAIL_USER.trim(),
-      pass: process.env.EMAIL_PASS.replace(/\s+/g, ''),
-    },
-  });
+  // Fallback: Gmail SMTP if configured
+  if (nodemailer && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
+      auth: {
+        user: process.env.EMAIL_USER.trim(),
+        pass: process.env.EMAIL_PASS.replace(/\s+/g, ''),
+      },
+    });
 
-  await transporter.sendMail({
-    from: `"ComplianceGuard" <${process.env.EMAIL_USER.trim()}>`,
-    to: toEmail,
-    subject: 'ComplianceGuard - Password Reset OTP',
-    text: `Your 6-digit OTP to reset your ComplianceGuard password is: ${otp}. Valid for 10 minutes.`,
-    html: `<p>Your 6-digit OTP to reset your <b>ComplianceGuard</b> password is:</p><h2>${otp}</h2><p>Valid for 10 minutes.</p>`,
-  });
+    await transporter.sendMail({
+      from: `"ComplianceGuard" <${process.env.EMAIL_USER.trim()}>`,
+      to: toEmail,
+      subject: 'ComplianceGuard - Password Reset OTP',
+      text: `Your 6-digit OTP to reset your ComplianceGuard password is: ${otp}. Valid for 10 minutes.`,
+      html: `<p>Your 6-digit OTP to reset your <b>ComplianceGuard</b> password is:</p><h2>${otp}</h2><p>Valid for 10 minutes.</p>`,
+    });
 
-  return { sent: true };
+    return { sent: true };
+  }
+
+  return {
+    sent: false,
+    reason: 'RESEND_API_KEY is not configured on Render.',
+  };
 }
 
 // Helper: Starter Controls (c1-c4)
@@ -331,7 +359,7 @@ app.post('/api/forgot-password/send-otp', async (req, res) => {
     const mailResult = await sendOtpEmail(email, otp);
     if (!mailResult.sent) {
       return res.status(503).json({
-        error: 'Email service (EMAIL_USER / EMAIL_PASS) is not configured on Render yet. Configure Gmail App Password in Render Environment.',
+        error: mailResult.reason || 'Email service is not configured on Render.',
       });
     }
 

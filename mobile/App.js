@@ -322,10 +322,10 @@ export default function App() {
 
     setAuthLoading(true);
     setAuthError('');
-    setAuthInfo('Connecting to server (may take 15-20s if server is waking up)...');
+    setAuthInfo('Sending OTP...');
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 25000);
+    const timer = setTimeout(() => controller.abort(), 30000);
 
     try {
       const res = await fetch(`${API_BASE}/forgot-password/send-otp`, {
@@ -349,7 +349,7 @@ export default function App() {
       clearTimeout(timer);
       setAuthInfo('');
       if (err.name === 'AbortError') {
-        setAuthError('Server took too long to respond. Tap Send OTP again now that server is awake.');
+        setAuthError('Server took too long to wake up. Tap Send OTP again.');
       } else {
         setAuthError('Network error while sending OTP. Please try again.');
       }
