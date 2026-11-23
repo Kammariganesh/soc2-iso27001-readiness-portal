@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   SafeAreaView,
   View,
@@ -11,6 +11,7 @@ import {
   StatusBar,
   Platform,
   BackHandler,
+  KeyboardAvoidingView,
 } from 'react-native';
 
 const API_BASE = 'https://soc2-iso27001-readiness-portal.onrender.com/api';
@@ -44,6 +45,8 @@ const STATUS_OPTIONS = ['Compliant', 'In Progress', 'Non-Compliant'];
 const ROLES = ['Super Admin', 'Editor', 'Auditor'];
 
 export default function App() {
+  const authScrollRef = useRef(null);
+
   // 'onboarding' | 'auth' | 'workspace' | 'dashboard'
   const [screen, setScreen] = useState('onboarding');
   const [stepIndex, setStepIndex] = useState(0);
@@ -119,6 +122,12 @@ export default function App() {
     setTimeout(() => setStatusBanner(''), 3000);
   };
 
+  const scrollAuthUp = (offset = 160) => {
+    setTimeout(() => {
+      authScrollRef.current?.scrollTo({ y: offset, animated: true });
+    }, 150);
+  };
+
   // Handle Android Hardware Back Button inside App
   useEffect(() => {
     const onHardwareBack = () => {
@@ -150,7 +159,7 @@ export default function App() {
         setStepIndex((prev) => prev - 1);
         return true;
       }
-      return false; // Only exit on first onboarding screen
+      return false;
     };
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
@@ -329,11 +338,7 @@ export default function App() {
       }
 
       setOtpSent(true);
-      setAuthInfo(
-        data.demoOtp
-          ? `OTP Sent! Verification Code: ${data.demoOtp}`
-          : '6-digit OTP sent to your registered email.'
-      );
+      setAuthInfo(data.message || '6-digit OTP sent to your email. Check Inbox or Spam.');
     } catch (err) {
       setAuthError('Server error while sending OTP.');
     } finally {
@@ -347,7 +352,7 @@ export default function App() {
     const cleanNewPass = resetNewPassword.trim();
 
     if (cleanOtp.length !== 6) {
-      setAuthError('Enter the 6-digit OTP.');
+      setAuthError('Enter the 6-digit OTP received in your email.');
       return;
     }
     if (cleanNewPass.length < 4) {
@@ -566,259 +571,274 @@ export default function App() {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.topBar}>
-            <View style={styles.brandRow}>
-              <View style={styles.logoBadge}>
-                <Text style={styles.logoText}>CG</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+        >
+          <ScrollView
+            ref={authScrollRef}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.topBar}>
+              <View style={styles.brandRow}>
+                <View style={styles.logoBadge}>
+                  <Text style={styles.logoText}>CG</Text>
+                </View>
+                <Text style={styles.brandName}>ComplianceGuard</Text>
               </View>
-              <Text style={styles.brandName}>ComplianceGuard</Text>
+
+              <Pressable
+                onPress={() => {
+                  setScreen('onboarding');
+                  setStepIndex(0);
+                }}
+              >
+                <Text style={styles.skipText}>Back to Intro</Text>
+              </Pressable>
             </View>
 
-            <Pressable
-              onPress={() => {
-                setScreen('onboarding');
-                setStepIndex(0);
-              }}
-            >
-              <Text style={styles.skipText}>Back to Intro</Text>
-            </Pressable>
-          </View>
+            <View style={styles.card}>
+              <Text style={styles.badgeText}>ACCOUNT ACCESS • STEP 4</Text>
+              <Text style={styles.sectionTitle}>
+                {authMode === 'login'
+                  ? 'Sign In to Workspace'
+                  : authMode === 'signup'
+                  ? 'Create Account (Sign Up)'
+                  : 'Reset Password with OTP'}
+              </Text>
+              <Text style={styles.subtitle}>
+                {authMode === 'login'
+                  ? 'Enter your registered email and password to continue.'
+                  : authMode === 'signup'
+                  ? 'Register with a valid domain email (e.g. name@company.com).'
+                  : otpSent
+                  ? 'Enter the 6-digit OTP from your email and set a new password.'
+                  : 'Enter your registered email to receive a 6-digit OTP in your mail.'}
+              </Text>
 
-          <View style={styles.card}>
-            <Text style={styles.badgeText}>ACCOUNT ACCESS • STEP 4</Text>
-            <Text style={styles.sectionTitle}>
-              {authMode === 'login'
-                ? 'Sign In to Workspace'
-                : authMode === 'signup'
-                ? 'Create Account (Sign Up)'
-                : 'Reset Password with OTP'}
-            </Text>
-            <Text style={styles.subtitle}>
-              {authMode === 'login'
-                ? 'Enter your registered email and password to continue.'
-                : authMode === 'signup'
-                ? 'Register with a valid domain email (e.g. name@company.com).'
-                : otpSent
-                ? 'Enter the 6-digit OTP sent to your email and set a new password.'
-                : 'Enter your registered email to receive a 6-digit OTP.'}
-            </Text>
-
-            {authMode !== 'forgot' && (
-              <View style={styles.modeToggleRow}>
-                <Pressable
-                  style={[styles.modeBtn, authMode === 'login' && styles.activeModeBtn]}
-                  onPress={() => {
-                    setAuthMode('login');
-                    setAuthError('');
-                    setAuthInfo('');
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.modeBtnText,
-                      authMode === 'login' && styles.activeModeBtnText,
-                    ]}
-                  >
-                    Login
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={[styles.modeBtn, authMode === 'signup' && styles.activeModeBtn]}
-                  onPress={() => {
-                    setAuthMode('signup');
-                    setAuthError('');
-                    setAuthInfo('');
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.modeBtnText,
-                      authMode === 'signup' && styles.activeModeBtnText,
-                    ]}
-                  >
-                    Sign Up
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-
-            {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
-            {authInfo ? <Text style={styles.infoText}>{authInfo}</Text> : null}
-
-            {authMode === 'forgot' ? (
-              <>
-                <Text style={styles.formLabel}>Registered Work Email</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="name@company.com"
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  editable={!otpSent}
-                  value={authEmail}
-                  onChangeText={setAuthEmail}
-                />
-
-                {!otpSent ? (
+              {authMode !== 'forgot' && (
+                <View style={styles.modeToggleRow}>
                   <Pressable
-                    style={[styles.primaryBtn, { marginTop: 14 }]}
-                    onPress={handleSendResetOtp}
-                    disabled={authLoading}
+                    style={[styles.modeBtn, authMode === 'login' && styles.activeModeBtn]}
+                    onPress={() => {
+                      setAuthMode('login');
+                      setAuthError('');
+                      setAuthInfo('');
+                    }}
                   >
-                    <Text style={styles.primaryBtnText}>
-                      {authLoading ? 'Sending OTP...' : 'Send 6-Digit OTP →'}
+                    <Text
+                      style={[
+                        styles.modeBtnText,
+                        authMode === 'login' && styles.activeModeBtnText,
+                      ]}
+                    >
+                      Login
                     </Text>
                   </Pressable>
-                ) : (
-                  <>
-                    <Text style={styles.formLabel}>Enter 6-Digit OTP</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g. 482910"
-                      placeholderTextColor="#94A3B8"
-                      keyboardType="number-pad"
-                      maxLength={6}
-                      value={otpInput}
-                      onChangeText={setOtpInput}
-                    />
 
-                    <Text style={styles.formLabel}>New Password</Text>
-                    <TextInput
-                      style={[styles.input, { marginBottom: 14 }]}
-                      placeholder="Enter new password (min 4 chars)"
-                      placeholderTextColor="#94A3B8"
-                      secureTextEntry
-                      value={resetNewPassword}
-                      onChangeText={setResetNewPassword}
-                    />
-
-                    <Pressable
-                      style={styles.primaryBtn}
-                      onPress={handleVerifyOtpAndReset}
-                      disabled={authLoading}
+                  <Pressable
+                    style={[styles.modeBtn, authMode === 'signup' && styles.activeModeBtn]}
+                    onPress={() => {
+                      setAuthMode('signup');
+                      setAuthError('');
+                      setAuthInfo('');
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.modeBtnText,
+                        authMode === 'signup' && styles.activeModeBtnText,
+                      ]}
                     >
-                      <Text style={styles.primaryBtnText}>
-                        {authLoading ? 'Verifying...' : 'Verify OTP & Save Password'}
-                      </Text>
-                    </Pressable>
+                      Sign Up
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
 
+              {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
+              {authInfo ? <Text style={styles.infoText}>{authInfo}</Text> : null}
+
+              {authMode === 'forgot' ? (
+                <>
+                  <Text style={styles.formLabel}>Registered Work Email</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="name@company.com"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    editable={!otpSent}
+                    value={authEmail}
+                    onChangeText={setAuthEmail}
+                  />
+
+                  {!otpSent ? (
                     <Pressable
-                      style={styles.demoFillBtn}
+                      style={[styles.primaryBtn, { marginTop: 14 }]}
                       onPress={handleSendResetOtp}
                       disabled={authLoading}
                     >
-                      <Text style={styles.demoFillText}>Resend OTP</Text>
+                      <Text style={styles.primaryBtnText}>
+                        {authLoading ? 'Sending OTP...' : 'Send OTP to Email →'}
+                      </Text>
                     </Pressable>
-                  </>
-                )}
+                  ) : (
+                    <>
+                      <Text style={styles.formLabel}>Enter 6-Digit OTP (From Email)</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Enter 6-digit OTP"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        value={otpInput}
+                        onChangeText={setOtpInput}
+                        onFocus={() => scrollAuthUp(140)}
+                      />
 
-                <Pressable
-                  style={styles.demoFillBtn}
-                  onPress={() => {
-                    setAuthMode('login');
-                    setOtpSent(false);
-                    setOtpInput('');
-                    setAuthError('');
-                    setAuthInfo('');
-                  }}
-                >
-                  <Text style={styles.demoFillText}>← Back to Sign In</Text>
-                </Pressable>
-              </>
-            ) : (
-              <>
-                {authMode === 'signup' && (
-                  <>
-                    <Text style={styles.formLabel}>Full Name</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g. Ganesh Kumar"
-                      placeholderTextColor="#94A3B8"
-                      value={authName}
-                      onChangeText={setAuthName}
-                    />
-                  </>
-                )}
+                      <Text style={styles.formLabel}>New Password</Text>
+                      <TextInput
+                        style={[styles.input, { marginBottom: 14 }]}
+                        placeholder="Enter new password (min 4 chars)"
+                        placeholderTextColor="#94A3B8"
+                        secureTextEntry
+                        value={resetNewPassword}
+                        onChangeText={setResetNewPassword}
+                        onFocus={() => scrollAuthUp(220)}
+                      />
 
-                <Text style={styles.formLabel}>Work Email</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="name@company.com"
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  value={authEmail}
-                  onChangeText={setAuthEmail}
-                />
+                      <Pressable
+                        style={styles.primaryBtn}
+                        onPress={handleVerifyOtpAndReset}
+                        disabled={authLoading}
+                      >
+                        <Text style={styles.primaryBtnText}>
+                          {authLoading ? 'Verifying...' : 'Verify OTP & Save Password'}
+                        </Text>
+                      </Pressable>
 
-                <Text style={styles.formLabel}>Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter password (min 4 chars)"
-                  placeholderTextColor="#94A3B8"
-                  secureTextEntry
-                  value={authPassword}
-                  onChangeText={setAuthPassword}
-                />
+                      <Pressable
+                        style={styles.demoFillBtn}
+                        onPress={handleSendResetOtp}
+                        disabled={authLoading}
+                      >
+                        <Text style={styles.demoFillText}>Resend OTP</Text>
+                      </Pressable>
+                    </>
+                  )}
 
-                {authMode === 'login' && (
                   <Pressable
-                    style={styles.forgotLinkWrap}
+                    style={styles.demoFillBtn}
                     onPress={() => {
-                      setAuthMode('forgot');
+                      setAuthMode('login');
                       setOtpSent(false);
                       setOtpInput('');
                       setAuthError('');
                       setAuthInfo('');
                     }}
                   >
-                    <Text style={styles.forgotLinkText}>Forgot password? Reset via OTP</Text>
+                    <Text style={styles.demoFillText}>← Back to Sign In</Text>
                   </Pressable>
-                )}
+                </>
+              ) : (
+                <>
+                  {authMode === 'signup' && (
+                    <>
+                      <Text style={styles.formLabel}>Full Name</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="e.g. Ganesh Kumar"
+                        placeholderTextColor="#94A3B8"
+                        value={authName}
+                        onChangeText={setAuthName}
+                        onFocus={() => scrollAuthUp(60)}
+                      />
+                    </>
+                  )}
 
-                <Text style={styles.formLabel}>Select Access Role</Text>
-                <View style={styles.chipsWrap}>
-                  {ROLES.map((r) => (
+                  <Text style={styles.formLabel}>Work Email</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="name@company.com"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={authEmail}
+                    onChangeText={setAuthEmail}
+                    onFocus={() => scrollAuthUp(120)}
+                  />
+
+                  <Text style={styles.formLabel}>Password</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter password (min 4 chars)"
+                    placeholderTextColor="#94A3B8"
+                    secureTextEntry
+                    value={authPassword}
+                    onChangeText={setAuthPassword}
+                    onFocus={() => scrollAuthUp(210)}
+                  />
+
+                  {authMode === 'login' && (
                     <Pressable
-                      key={r}
-                      style={[styles.chip, authRole === r && styles.activeChip]}
-                      onPress={() => setAuthRole(r)}
+                      style={styles.forgotLinkWrap}
+                      onPress={() => {
+                        setAuthMode('forgot');
+                        setOtpSent(false);
+                        setOtpInput('');
+                        setAuthError('');
+                        setAuthInfo('');
+                      }}
                     >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          authRole === r && styles.activeChipText,
-                        ]}
-                      >
-                        {r}
-                      </Text>
+                      <Text style={styles.forgotLinkText}>Forgot password? Reset via OTP</Text>
                     </Pressable>
-                  ))}
-                </View>
+                  )}
 
-                <Pressable
-                  style={styles.primaryBtn}
-                  onPress={handleAuthSubmit}
-                  disabled={authLoading}
-                >
-                  <Text style={styles.primaryBtnText}>
-                    {authLoading
-                      ? 'Please wait...'
-                      : authMode === 'login'
-                      ? 'Sign In →'
-                      : 'Create Account & Continue →'}
-                  </Text>
-                </Pressable>
+                  <Text style={styles.formLabel}>Select Access Role</Text>
+                  <View style={styles.chipsWrap}>
+                    {ROLES.map((r) => (
+                      <Pressable
+                        key={r}
+                        style={[styles.chip, authRole === r && styles.activeChip]}
+                        onPress={() => setAuthRole(r)}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            authRole === r && styles.activeChipText,
+                          ]}
+                        >
+                          {r}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
 
-                <Pressable style={styles.demoFillBtn} onPress={handleQuickDemoFill}>
-                  <Text style={styles.demoFillText}>Quick Fill Demo Credentials</Text>
-                </Pressable>
-              </>
-            )}
-          </View>
-        </ScrollView>
+                  <Pressable
+                    style={styles.primaryBtn}
+                    onPress={handleAuthSubmit}
+                    disabled={authLoading}
+                  >
+                    <Text style={styles.primaryBtnText}>
+                      {authLoading
+                        ? 'Please wait...'
+                        : authMode === 'login'
+                        ? 'Sign In →'
+                        : 'Create Account & Continue →'}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable style={styles.demoFillBtn} onPress={handleQuickDemoFill}>
+                    <Text style={styles.demoFillText}>Quick Fill Demo Credentials</Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -942,7 +962,7 @@ export default function App() {
         )}
 
         {activeTab === 'controls' && (
-          <ScrollView contentContainerStyle={styles.dashScroll}>
+          <ScrollView contentContainerStyle={styles.dashScroll} keyboardShouldPersistTaps="handled">
             <View style={styles.searchActionRow}>
               <TextInput
                 style={styles.searchInput}
@@ -1172,7 +1192,7 @@ export default function App() {
         )}
 
         {activeTab === 'profile' && (
-          <ScrollView contentContainerStyle={styles.dashScroll}>
+          <ScrollView contentContainerStyle={styles.dashScroll} keyboardShouldPersistTaps="handled">
             <View style={styles.card}>
               <Text style={styles.badgeText}>USER PROFILE</Text>
               <Text style={styles.sectionTitle}>
@@ -1353,7 +1373,7 @@ export default function App() {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.topBar}>
             <View style={styles.brandRow}>
               <View style={styles.logoBadge}>
@@ -1574,7 +1594,7 @@ const styles = StyleSheet.create({
     paddingTop: TOP_SAFE_SPACE,
   },
   scrollContent: {
-    paddingBottom: 28,
+    paddingBottom: 90,
     gap: 14,
   },
   dashScroll: {

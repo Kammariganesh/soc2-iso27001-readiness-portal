@@ -3,6 +3,13 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 
+let nodemailer = null;
+try {
+  nodemailer = require('nodemailer');
+} catch (e) {
+  console.log('nodemailer not installed yet; run `npm install nodemailer` in server folder for real emails.');
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -80,6 +87,30 @@ const Control = mongoose.model('Control', controlSchema);
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
+async function sendOtpEmail(toEmail, otp) {
+  if (!nodemailer || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    return { sent: false, reason: 'Email credentials not configured on server.' };
+  }
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  await transporter.sendMail({
+    from: `"ComplianceGuard" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: 'ComplianceGuard Password Reset OTP',
+    text: `Your 6-digit OTP to reset your ComplianceGuard password is: ${otp}. It is valid for 10 minutes.`,
+    html: `<p>Your 6-digit OTP to reset your <b>ComplianceGuard</b> password is:</p><h2>${otp}</h2><p>This code expires in 10 minutes.</p>`,
+  });
+
+  return { sent: true };
+}
+
 // Helper: Starter Controls (c1-c4)
 function buildStarterControls(orgId, framework = 'SOC 2') {
   return [
@@ -125,35 +156,45 @@ function buildStarterControls(orgId, framework = 'SOC 2') {
 // Seed default users, organizations & starter data
 async function seedInitialData() {
   try {
-    const userCount = await User.countDocuments();
-    if (userCount === 0) {
-      await User.insertMany([
-        {
-          name: 'Ganesh Kumar',
-          email: 'ganesh@complianceguard.app',
-          password: 'Pass@123',
-          role: 'Super Admin',
-        },
-        {
-          name: 'Admin Lead',
-          email: 'admin@complianceguard.io',
-          password: 'Admin@123',
-          role: 'Super Admin',
-        },
-        {
-          name: 'Security Auditor',
-          email: 'auditor@complianceguard.io',
-          password: 'Audit@123',
-          role: 'Auditor',
-        },
-        {
-          name: 'Compliance Analyst',
-          email: 'analyst@complianceguard.io',
-          password: 'Edit@123',
-          role: 'Editor',
-        },
-      ]);
-      console.log('Seeded default users!');
+    const defaultUsers = [
+      {
+        name: 'Ganesh Kumar',
+        email: 'ganesh@complianceguard.app',
+        password: 'Pass@123',
+        role: 'Super Admin',
+      },
+      {
+        name: 'Kamari Ganesh',
+        email: 'kammariganesh777@gmail.com',
+        password: 'Pass@123',
+        role: 'Super Admin',
+      },
+      {
+        name: 'Admin Lead',
+        email: 'admin@complianceguard.io',
+        password: 'Admin@123',
+        role: 'Super Admin',
+      },
+      {
+        name: 'Security Auditor',
+        email: 'auditor@complianceguard.io',
+        password: 'Audit@123',
+        role: 'Auditor',
+      },
+      {
+        name: 'Compliance Analyst',
+        email: 'analyst@complianceguard.io',
+        password: 'Edit@123',
+        role: 'Editor',
+      },
+    ];
+
+    for (const u of defaultUsers) {
+      await User.updateOne(
+        { email: u.email.toLowerCase() },
+        { $setOnInsert: u },
+        { upsert: true }
+      );
     }
 
     const orgCount = await Organization.countDocuments();
@@ -195,7 +236,7 @@ async function seedInitialData() {
         await Control.updateMany({ orgId: { $exists: false } }, { $set: { orgId: 'ORG-101' } });
         await Control.insertMany(buildStarterControls('ORG-102', 'ISO 27001'));
       }
-      console.log('Seeded default organizations, members, and starter controls!');
+      console.log('Seeded default users, organizations, members, and starter controls!');
     }
   } catch (err) {
     console.log('Seed check error:', err.message);
@@ -279,12 +320,18 @@ app.post('/api/forgot-password/send-otp', async (req, res) => {
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     user.resetOtp = otp;
-    user.resetOtpExpires = Date.now() + 10 * 60 * 1000; // 10 mins
+    user.resetOtpExpires = Date.now() + 10 * 60 * 1000;
     await user.save();
 
+    const mailResult = await sendOtpEmail(email, otp);
+    if (!mailResult.sent) {
+      return res.status(503).json({
+        error: 'Email service (EMAIL_USER / EMAIL_PASS) is not configured on Render yet. Configure Gmail App Password in Render Environment.',
+      });
+    }
+
     return res.json({
-      message: 'OTP sent to your registered email.',
-      demoOtp: otp,
+      message: '6-digit OTP sent to your email. Check Inbox or Spam.',
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -312,7 +359,7 @@ app.post('/api/forgot-password/verify-reset', async (req, res) => {
       return res.status(404).json({ error: 'Account not found.' });
     }
     if (!user.resetOtp || user.resetOtp !== otp) {
-      return res.status(401).json({ error: 'Invalid OTP. Please check and try again.' });
+      return res.status(401).json({ error: 'Invalid OTP. Please check your email and try again.' });
     }
     if (Date.now() > user.resetOtpExpires) {
       return res.status(401).json({ error: 'OTP expired. Request a new OTP.' });
