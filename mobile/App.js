@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   SafeAreaView,
   View,
@@ -10,9 +10,11 @@ import {
   StyleSheet,
   StatusBar,
   Platform,
+  BackHandler,
 } from 'react-native';
 
 const API_BASE = 'https://soc2-iso27001-readiness-portal.onrender.com/api';
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
 const ONBOARDING_SLIDES = [
   {
@@ -51,7 +53,13 @@ export default function App() {
   const [authName, setAuthName] = useState('');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // Forgot Password OTP states
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpInput, setOtpInput] = useState('');
   const [resetNewPassword, setResetNewPassword] = useState('');
+
   const [authRole, setAuthRole] = useState('Super Admin');
   const [authError, setAuthError] = useState('');
   const [authInfo, setAuthInfo] = useState('');
@@ -73,6 +81,7 @@ export default function App() {
   // Dashboard Tabs ('dashboard' | 'controls' | 'profile' | 'settings')
   const [activeTab, setActiveTab] = useState('dashboard');
   const [activeRole, setActiveRole] = useState('Super Admin');
+  const [syncingData, setSyncingData] = useState(false);
 
   // Controls state
   const [controls, setControls] = useState([]);
@@ -110,6 +119,44 @@ export default function App() {
     setTimeout(() => setStatusBanner(''), 3000);
   };
 
+  // Handle Android Hardware Back Button inside App
+  useEffect(() => {
+    const onHardwareBack = () => {
+      if (screen === 'dashboard') {
+        if (activeTab !== 'dashboard') {
+          setActiveTab('dashboard');
+          return true;
+        }
+        setScreen('workspace');
+        return true;
+      }
+      if (screen === 'workspace') {
+        setScreen('auth');
+        return true;
+      }
+      if (screen === 'auth') {
+        if (authMode === 'forgot') {
+          setAuthMode('login');
+          setOtpSent(false);
+          setAuthError('');
+          setAuthInfo('');
+          return true;
+        }
+        setScreen('onboarding');
+        setStepIndex(0);
+        return true;
+      }
+      if (screen === 'onboarding' && stepIndex > 0) {
+        setStepIndex((prev) => prev - 1);
+        return true;
+      }
+      return false; // Only exit on first onboarding screen
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => subscription.remove();
+  }, [screen, activeTab, authMode, stepIndex]);
+
   const loadOrganizations = async () => {
     setLoadingOrgs(true);
     setApiError('');
@@ -126,13 +173,15 @@ export default function App() {
     }
   };
 
-  const loadDashboardData = async (org) => {
-    const orgId = org?._id || org?.id || '';
+  const loadDashboardData = async (org, showFeedback = false) => {
+    const orgId = org?.id || org?._id || '';
     setLoadingControls(true);
     setLoadingMembers(true);
+    if (showFeedback) setSyncingData(true);
+
     try {
       const ctrlUrl = orgId
-        ? `${API_BASE}/controls?organizationId=${encodeURIComponent(orgId)}`
+        ? `${API_BASE}/controls?orgId=${encodeURIComponent(orgId)}`
         : `${API_BASE}/controls`;
       const ctrlRes = await fetch(ctrlUrl);
       if (ctrlRes.ok) {
@@ -140,15 +189,9 @@ export default function App() {
         const ctrlList = Array.isArray(ctrlData) ? ctrlData : ctrlData.controls || [];
         setControls(ctrlList);
       }
-    } catch (err) {
-      showToast('Could not sync controls right now.');
-    } finally {
-      setLoadingControls(false);
-    }
 
-    try {
       const memUrl = orgId
-        ? `${API_BASE}/members?organizationId=${encodeURIComponent(orgId)}`
+        ? `${API_BASE}/members?orgId=${encodeURIComponent(orgId)}`
         : `${API_BASE}/members`;
       const memRes = await fetch(memUrl);
       if (memRes.ok) {
@@ -156,10 +199,16 @@ export default function App() {
         const memList = Array.isArray(memData) ? memData : memData.members || [];
         setMembers(memList);
       }
+
+      if (showFeedback) {
+        showToast('Synced latest data from MongoDB');
+      }
     } catch (err) {
-      // Optional fallback
+      showToast('Could not sync data right now.');
     } finally {
+      setLoadingControls(false);
       setLoadingMembers(false);
+      if (showFeedback) setSyncingData(false);
     }
   };
 
@@ -178,7 +227,7 @@ export default function App() {
     setSelectedOrg(org);
     setActiveTab('dashboard');
     setScreen('dashboard');
-    loadDashboardData(org);
+    loadDashboardData(org, false);
   };
 
   const handleNext = () => {
@@ -194,12 +243,12 @@ export default function App() {
   };
 
   const handleAuthSubmit = async () => {
-    const cleanEmail = authEmail.trim();
+    const cleanEmail = authEmail.trim().toLowerCase();
     const cleanPassword = authPassword.trim();
     const cleanName = authName.trim();
 
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      setAuthError('Please enter a valid email address.');
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      setAuthError('Enter a valid email address (e.g. name@company.com or name@gmail.com).');
       return;
     }
     if (!cleanPassword || cleanPassword.length < 4) {
@@ -211,63 +260,132 @@ export default function App() {
       return;
     }
 
-    if (authMode === 'login') {
-      try {
-        const res = await fetch(`${API_BASE}/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: cleanEmail,
-            password: cleanPassword,
-            role: authRole,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          setAuthError(data.error || 'Invalid email or password.');
-          return;
-        }
-      } catch (err) {
-        setAuthError('Could not reach server to verify credentials.');
-        return;
-      }
-    }
-
-    const derivedName =
-      authMode === 'signup'
-        ? cleanName
-        : cleanName || cleanEmail.split('@')[0];
-
-    setCurrentUser({
-      name: derivedName,
-      email: cleanEmail,
-      role: authRole,
-      authMethod: authMode === 'signup' ? 'Signed Up' : 'Signed In',
-    });
-    setActiveRole(authRole);
+    setAuthLoading(true);
     setAuthError('');
     setAuthInfo('');
-    goToWorkspaceScreen();
+
+    try {
+      const endpoint = authMode === 'signup' ? '/signup' : '/login';
+      const payload =
+        authMode === 'signup'
+          ? { name: cleanName, email: cleanEmail, password: cleanPassword, role: authRole }
+          : { email: cleanEmail, password: cleanPassword, role: authRole };
+
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setAuthError(data.error || 'Authentication failed.');
+        return;
+      }
+
+      const verifiedUser = data.user || {
+        name: cleanName || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        role: authRole,
+      };
+
+      setCurrentUser({
+        name: verifiedUser.name,
+        email: verifiedUser.email,
+        role: verifiedUser.role || authRole,
+        authMethod: authMode === 'signup' ? 'Signed Up' : 'Signed In',
+      });
+      setActiveRole(verifiedUser.role || authRole);
+      goToWorkspaceScreen();
+    } catch (err) {
+      setAuthError('Could not reach server. Please check internet and try again.');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
-  const handleResetPassword = () => {
-    const cleanEmail = authEmail.trim();
-    const cleanNewPass = resetNewPassword.trim();
-
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      setAuthError('Enter your registered email (or any valid email) to reset.');
+  const handleSendResetOtp = async () => {
+    const cleanEmail = authEmail.trim().toLowerCase();
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      setAuthError('Enter a valid registered email (e.g. name@company.com).');
       return;
     }
-    if (!cleanNewPass || cleanNewPass.length < 4) {
+
+    setAuthLoading(true);
+    setAuthError('');
+    setAuthInfo('');
+
+    try {
+      const res = await fetch(`${API_BASE}/forgot-password/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setAuthError(data.error || 'Could not send OTP.');
+        return;
+      }
+
+      setOtpSent(true);
+      setAuthInfo(
+        data.demoOtp
+          ? `OTP Sent! Verification Code: ${data.demoOtp}`
+          : '6-digit OTP sent to your registered email.'
+      );
+    } catch (err) {
+      setAuthError('Server error while sending OTP.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyOtpAndReset = async () => {
+    const cleanEmail = authEmail.trim().toLowerCase();
+    const cleanOtp = otpInput.trim();
+    const cleanNewPass = resetNewPassword.trim();
+
+    if (cleanOtp.length !== 6) {
+      setAuthError('Enter the 6-digit OTP.');
+      return;
+    }
+    if (cleanNewPass.length < 4) {
       setAuthError('New password must be at least 4 characters.');
       return;
     }
 
-    setAuthPassword(cleanNewPass);
-    setResetNewPassword('');
+    setAuthLoading(true);
     setAuthError('');
-    setAuthMode('login');
-    setAuthInfo('Password updated. Tap Sign In below to continue.');
+
+    try {
+      const res = await fetch(`${API_BASE}/forgot-password/verify-reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          otp: cleanOtp,
+          newPassword: cleanNewPass,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setAuthError(data.error || 'OTP verification failed.');
+        return;
+      }
+
+      setAuthPassword(cleanNewPass);
+      setOtpInput('');
+      setResetNewPassword('');
+      setOtpSent(false);
+      setAuthMode('login');
+      setAuthInfo('Password updated! Tap Sign In below.');
+    } catch (err) {
+      setAuthError('Server error while resetting password.');
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const handleQuickDemoFill = () => {
@@ -289,8 +407,8 @@ export default function App() {
   };
 
   const handleCreateOrganization = async () => {
-    if (!orgName.trim() || !contactEmail.trim()) {
-      setApiError('Please enter both Organization Name and Contact Email.');
+    if (!orgName.trim() || !EMAIL_REGEX.test(contactEmail.trim())) {
+      setApiError('Enter Organization Name and a valid Contact Email (e.g. security@company.com).');
       return;
     }
     setCreatingOrg(true);
@@ -301,9 +419,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: orgName.trim(),
-          contactEmail: contactEmail.trim(),
+          email: contactEmail.trim(),
           framework,
-          cloudEnvironment: cloudEnv,
+          cloud: cloudEnv,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -353,13 +471,13 @@ export default function App() {
     }
     setSavingControl(true);
     const payload = {
-      code: newCode.trim().toUpperCase(),
-      title: newTitle.trim(),
-      category: newCategory.trim() || 'Security',
-      owner: newOwner.trim() || 'Security Lead',
+      id: newCode.trim().toUpperCase(),
+      name: newTitle.trim(),
+      framework: selectedOrg?.framework || 'SOC 2',
       status: 'In Progress',
-      evidenceNote: '',
-      organizationId: selectedOrg?._id || selectedOrg?.id || '',
+      evidence: '',
+      orgId: selectedOrg?.id || selectedOrg?._id || 'ORG-101',
+      updatedBy: activeRole,
     };
 
     try {
@@ -369,19 +487,18 @@ export default function App() {
         body: JSON.stringify(payload),
       });
       if (res.ok) {
-        const created = await res.json();
-        const savedCtrl = created.control || created;
+        const savedCtrl = await res.json();
         setControls((prev) => [savedCtrl, ...prev]);
         showToast('New control added');
       } else {
-        setControls((prev) => [{ ...payload, id: Date.now().toString() }, ...prev]);
+        setControls((prev) => [{ ...payload, _id: Date.now().toString() }, ...prev]);
         showToast('Control added locally');
       }
       setNewCode('');
       setNewTitle('');
       setShowAddControl(false);
     } catch (err) {
-      setControls((prev) => [{ ...payload, id: Date.now().toString() }, ...prev]);
+      setControls((prev) => [{ ...payload, _id: Date.now().toString() }, ...prev]);
       setShowAddControl(false);
     } finally {
       setSavingControl(false);
@@ -408,8 +525,8 @@ export default function App() {
       showToast('Only Super Admin can invite members.');
       return;
     }
-    if (!memberName.trim() || !memberEmail.trim()) {
-      showToast('Enter member name and email.');
+    if (!memberName.trim() || !EMAIL_REGEX.test(memberEmail.trim())) {
+      showToast('Enter member name and valid email (name@domain.com).');
       return;
     }
     setAddingMember(true);
@@ -417,7 +534,7 @@ export default function App() {
       name: memberName.trim(),
       email: memberEmail.trim(),
       role: memberRole,
-      organizationId: selectedOrg?._id || selectedOrg?.id || '',
+      orgId: selectedOrg?.id || selectedOrg?._id || 'ORG-101',
     };
 
     try {
@@ -427,24 +544,23 @@ export default function App() {
         body: JSON.stringify(payload),
       });
       if (res.ok) {
-        const created = await res.json();
-        const savedMem = created.member || created;
+        const savedMem = await res.json();
         setMembers((prev) => [savedMem, ...prev]);
       } else {
-        setMembers((prev) => [{ ...payload, id: Date.now().toString() }, ...prev]);
+        setMembers((prev) => [{ ...payload, _id: Date.now().toString() }, ...prev]);
       }
       setMemberName('');
       setMemberEmail('');
       showToast('Team member added');
     } catch (err) {
-      setMembers((prev) => [{ ...payload, id: Date.now().toString() }, ...prev]);
+      setMembers((prev) => [{ ...payload, _id: Date.now().toString() }, ...prev]);
     } finally {
       setAddingMember(false);
     }
   };
 
   // =========================================================
-  // LOGIN, SIGN UP & FORGOT PASSWORD SCREEN
+  // LOGIN, SIGN UP & FORGOT PASSWORD (OTP) SCREEN
   // =========================================================
   if (screen === 'auth') {
     return (
@@ -476,14 +592,16 @@ export default function App() {
                 ? 'Sign In to Workspace'
                 : authMode === 'signup'
                 ? 'Create Account (Sign Up)'
-                : 'Reset Password'}
+                : 'Reset Password with OTP'}
             </Text>
             <Text style={styles.subtitle}>
               {authMode === 'login'
-                ? 'Enter your account credentials and role to continue.'
+                ? 'Enter your registered email and password to continue.'
                 : authMode === 'signup'
-                ? 'Register your account details and choose your compliance role.'
-                : 'Forgot your email or password? Reset below or use Demo Fill.'}
+                ? 'Register with a valid domain email (e.g. name@company.com).'
+                : otpSent
+                ? 'Enter the 6-digit OTP sent to your email and set a new password.'
+                : 'Enter your registered email to receive a 6-digit OTP.'}
             </Text>
 
             {authMode !== 'forgot' && (
@@ -531,36 +649,79 @@ export default function App() {
 
             {authMode === 'forgot' ? (
               <>
-                <Text style={styles.formLabel}>Work Email</Text>
+                <Text style={styles.formLabel}>Registered Work Email</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="name@company.com"
                   placeholderTextColor="#94A3B8"
                   keyboardType="email-address"
                   autoCapitalize="none"
+                  editable={!otpSent}
                   value={authEmail}
                   onChangeText={setAuthEmail}
                 />
 
-                <Text style={styles.formLabel}>New Password</Text>
-                <TextInput
-                  style={[styles.input, { marginBottom: 14 }]}
-                  placeholder="Enter new password (min 4 chars)"
-                  placeholderTextColor="#94A3B8"
-                  secureTextEntry
-                  value={resetNewPassword}
-                  onChangeText={setResetNewPassword}
-                />
+                {!otpSent ? (
+                  <Pressable
+                    style={[styles.primaryBtn, { marginTop: 14 }]}
+                    onPress={handleSendResetOtp}
+                    disabled={authLoading}
+                  >
+                    <Text style={styles.primaryBtnText}>
+                      {authLoading ? 'Sending OTP...' : 'Send 6-Digit OTP →'}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <>
+                    <Text style={styles.formLabel}>Enter 6-Digit OTP</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g. 482910"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      value={otpInput}
+                      onChangeText={setOtpInput}
+                    />
 
-                <Pressable style={styles.primaryBtn} onPress={handleResetPassword}>
-                  <Text style={styles.primaryBtnText}>Save New Password</Text>
-                </Pressable>
+                    <Text style={styles.formLabel}>New Password</Text>
+                    <TextInput
+                      style={[styles.input, { marginBottom: 14 }]}
+                      placeholder="Enter new password (min 4 chars)"
+                      placeholderTextColor="#94A3B8"
+                      secureTextEntry
+                      value={resetNewPassword}
+                      onChangeText={setResetNewPassword}
+                    />
+
+                    <Pressable
+                      style={styles.primaryBtn}
+                      onPress={handleVerifyOtpAndReset}
+                      disabled={authLoading}
+                    >
+                      <Text style={styles.primaryBtnText}>
+                        {authLoading ? 'Verifying...' : 'Verify OTP & Save Password'}
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      style={styles.demoFillBtn}
+                      onPress={handleSendResetOtp}
+                      disabled={authLoading}
+                    >
+                      <Text style={styles.demoFillText}>Resend OTP</Text>
+                    </Pressable>
+                  </>
+                )}
 
                 <Pressable
                   style={styles.demoFillBtn}
                   onPress={() => {
                     setAuthMode('login');
+                    setOtpSent(false);
+                    setOtpInput('');
                     setAuthError('');
+                    setAuthInfo('');
                   }}
                 >
                   <Text style={styles.demoFillText}>← Back to Sign In</Text>
@@ -607,11 +768,13 @@ export default function App() {
                     style={styles.forgotLinkWrap}
                     onPress={() => {
                       setAuthMode('forgot');
+                      setOtpSent(false);
+                      setOtpInput('');
                       setAuthError('');
                       setAuthInfo('');
                     }}
                   >
-                    <Text style={styles.forgotLinkText}>Forgot email or password?</Text>
+                    <Text style={styles.forgotLinkText}>Forgot password? Reset via OTP</Text>
                   </Pressable>
                 )}
 
@@ -635,9 +798,17 @@ export default function App() {
                   ))}
                 </View>
 
-                <Pressable style={styles.primaryBtn} onPress={handleAuthSubmit}>
+                <Pressable
+                  style={styles.primaryBtn}
+                  onPress={handleAuthSubmit}
+                  disabled={authLoading}
+                >
                   <Text style={styles.primaryBtnText}>
-                    {authMode === 'login' ? 'Sign In →' : 'Create Account & Continue →'}
+                    {authLoading
+                      ? 'Please wait...'
+                      : authMode === 'login'
+                      ? 'Sign In →'
+                      : 'Create Account & Continue →'}
                   </Text>
                 </Pressable>
 
@@ -666,12 +837,14 @@ export default function App() {
     const filteredControls = controls.filter((c) => {
       const matchesStatus = statusFilter === 'All' || c.status === statusFilter;
       const q = searchQuery.trim().toLowerCase();
+      const displayCode = c.code || c.id || '';
+      const displayTitle = c.title || c.name || '';
       const matchesQuery =
         !q ||
-        (c.code || '').toLowerCase().includes(q) ||
-        (c.title || '').toLowerCase().includes(q) ||
-        (c.category || '').toLowerCase().includes(q) ||
-        (c.owner || '').toLowerCase().includes(q);
+        displayCode.toLowerCase().includes(q) ||
+        displayTitle.toLowerCase().includes(q) ||
+        (c.framework || '').toLowerCase().includes(q) ||
+        (c.updatedBy || '').toLowerCase().includes(q);
       return matchesStatus && matchesQuery;
     });
 
@@ -712,7 +885,7 @@ export default function App() {
               </View>
               <Text style={styles.helperText}>
                 Framework: {selectedOrg?.framework || 'SOC 2 Type II'} • Cloud:{' '}
-                {selectedOrg?.cloudEnvironment || 'AWS'}
+                {selectedOrg?.cloud || selectedOrg?.cloudEnvironment || 'AWS'}
               </Text>
             </View>
 
@@ -753,11 +926,17 @@ export default function App() {
                 </Pressable>
                 <Pressable
                   style={styles.secondaryBtn}
-                  onPress={() => loadDashboardData(selectedOrg)}
+                  onPress={() => loadDashboardData(selectedOrg, true)}
+                  disabled={syncingData}
                 >
-                  <Text style={styles.secondaryBtnText}>Sync Data</Text>
+                  <Text style={styles.secondaryBtnText}>
+                    {syncingData ? 'Syncing...' : 'Sync Data'}
+                  </Text>
                 </Pressable>
               </View>
+              <Text style={styles.helperText}>
+                Sync Data refreshes controls & team records directly from MongoDB.
+              </Text>
             </View>
           </ScrollView>
         )}
@@ -767,7 +946,7 @@ export default function App() {
             <View style={styles.searchActionRow}>
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search ID, title, category..."
+                placeholder="Search ID, title, framework..."
                 placeholderTextColor="#94A3B8"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
@@ -869,21 +1048,22 @@ export default function App() {
                 const id = ctrl._id || ctrl.id || idx;
                 const isEditingNote = editingNoteId === id;
                 const isConfirmingDel = confirmDeleteId === id;
+                const proofText = ctrl.evidence || ctrl.evidenceNote || '';
 
                 return (
                   <View key={id} style={styles.controlCard}>
                     <View style={styles.controlTopRow}>
                       <View style={styles.codeBadge}>
                         <Text style={styles.codeBadgeText}>
-                          {ctrl.code || `C-${idx + 1}`}
+                          {ctrl.code || ctrl.id || `C-${idx + 1}`}
                         </Text>
                       </View>
                       <Text style={styles.categoryTag}>
-                        {ctrl.category || 'Security'} • {ctrl.owner || 'Owner'}
+                        {ctrl.framework || 'SOC 2'} • {ctrl.updatedBy || 'Admin'}
                       </Text>
                     </View>
 
-                    <Text style={styles.controlTitle}>{ctrl.title}</Text>
+                    <Text style={styles.controlTitle}>{ctrl.title || ctrl.name}</Text>
 
                     <View style={styles.statusRow}>
                       {STATUS_OPTIONS.map((st) => {
@@ -928,7 +1108,10 @@ export default function App() {
                           <Pressable
                             style={styles.smallPrimaryBtn}
                             onPress={() => {
-                              handleUpdateControl(ctrl, { evidenceNote: noteDraft });
+                              handleUpdateControl(ctrl, {
+                                evidence: noteDraft,
+                                evidenceNote: noteDraft,
+                              });
                               setEditingNoteId(null);
                             }}
                           >
@@ -945,17 +1128,17 @@ export default function App() {
                     ) : (
                       <View style={styles.evidenceRow}>
                         <Text style={styles.evidenceText} numberOfLines={2}>
-                          Evidence: {ctrl.evidenceNote || 'No proof note added yet'}
+                          Evidence: {proofText || 'No proof note added yet'}
                         </Text>
                         {!isAuditor && (
                           <Pressable
                             onPress={() => {
                               setEditingNoteId(id);
-                              setNoteDraft(ctrl.evidenceNote || '');
+                              setNoteDraft(proofText);
                             }}
                           >
                             <Text style={styles.linkAction}>
-                              {ctrl.evidenceNote ? 'Edit' : '+ Proof'}
+                              {proofText ? 'Edit' : '+ Proof'}
                             </Text>
                           </Pressable>
                         )}
@@ -1021,7 +1204,7 @@ export default function App() {
                   />
                   <TextInput
                     style={[styles.input, { marginTop: 8 }]}
-                    placeholder="Member Email"
+                    placeholder="Member Email (name@domain.com)"
                     placeholderTextColor="#94A3B8"
                     autoCapitalize="none"
                     value={memberEmail}
@@ -1295,7 +1478,7 @@ export default function App() {
                     >
                       <Text style={styles.orgName}>{item.name || 'Untitled Workspace'}</Text>
                       <Text style={styles.orgMeta}>
-                        {item.framework || 'Compliance'} • {item.cloudEnvironment || 'Cloud'}
+                        {item.framework || 'Compliance'} • {item.cloud || item.cloudEnvironment || 'Cloud'}
                       </Text>
                       <Text style={styles.tapHint}>Tap to open workspace →</Text>
                     </Pressable>

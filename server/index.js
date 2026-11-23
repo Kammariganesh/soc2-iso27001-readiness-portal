@@ -23,6 +23,18 @@ mongoose
 // ==========================================
 // SCHEMAS & MODELS
 // ==========================================
+const userSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    email: { type: String, required: true, unique: true, lowercase: true },
+    password: { type: String, required: true },
+    role: { type: String, default: 'Super Admin' },
+    resetOtp: { type: String, default: '' },
+    resetOtpExpires: { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+
 const organizationSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, unique: true },
@@ -61,11 +73,14 @@ const controlSchema = new mongoose.Schema(
   { timestamps: true, strict: false }
 );
 
+const User = mongoose.model('User', userSchema);
 const Organization = mongoose.model('Organization', organizationSchema);
 const Member = mongoose.model('Member', memberSchema);
 const Control = mongoose.model('Control', controlSchema);
 
-// Helper: Starter Controls (c1-c4) with baseline audit evidence notes
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+
+// Helper: Starter Controls (c1-c4)
 function buildStarterControls(orgId, framework = 'SOC 2') {
   return [
     {
@@ -107,9 +122,40 @@ function buildStarterControls(orgId, framework = 'SOC 2') {
   ];
 }
 
-// Seed default organizations & starter data only if DB has zero organizations
+// Seed default users, organizations & starter data
 async function seedInitialData() {
   try {
+    const userCount = await User.countDocuments();
+    if (userCount === 0) {
+      await User.insertMany([
+        {
+          name: 'Ganesh Kumar',
+          email: 'ganesh@complianceguard.app',
+          password: 'Pass@123',
+          role: 'Super Admin',
+        },
+        {
+          name: 'Admin Lead',
+          email: 'admin@complianceguard.io',
+          password: 'Admin@123',
+          role: 'Super Admin',
+        },
+        {
+          name: 'Security Auditor',
+          email: 'auditor@complianceguard.io',
+          password: 'Audit@123',
+          role: 'Auditor',
+        },
+        {
+          name: 'Compliance Analyst',
+          email: 'analyst@complianceguard.io',
+          password: 'Edit@123',
+          role: 'Editor',
+        },
+      ]);
+      console.log('Seeded default users!');
+    }
+
     const orgCount = await Organization.countDocuments();
     if (orgCount === 0) {
       await Organization.insertMany([
@@ -157,6 +203,133 @@ async function seedInitialData() {
 }
 
 // ==========================================
+// AUTH ROUTES (SIGN UP, LOGIN, OTP RESET)
+// ==========================================
+app.post('/api/signup', async (req, res) => {
+  try {
+    const name = (req.body.name || '').trim();
+    const email = (req.body.email || '').trim().toLowerCase();
+    const password = (req.body.password || '').trim();
+    const role = req.body.role || 'Super Admin';
+
+    if (!name) {
+      return res.status(400).json({ error: 'Full name is required.' });
+    }
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: 'Enter a valid email like name@domain.com' });
+    }
+    if (password.length < 4) {
+      return res.status(400).json({ error: 'Password must be at least 4 characters.' });
+    }
+
+    const existing = await User.findOne({ email });
+    if (existing) {
+      return res.status(409).json({ error: 'Email already registered. Please Sign In.' });
+    }
+
+    const newUser = await User.create({ name, email, password, role });
+    return res.status(201).json({
+      user: { name: newUser.name, email: newUser.email, role: newUser.role },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    const password = (req.body.password || '').trim();
+
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: 'Enter a valid email like name@domain.com' });
+    }
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required.' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user || user.password !== password) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    return res.json({
+      user: {
+        name: user.name,
+        email: user.email,
+        role: req.body.role || user.role,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/forgot-password/send-otp', async (req, res) => {
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: 'Enter a valid registered email (e.g. name@domain.com).' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: 'No account found with this email.' });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.resetOtp = otp;
+    user.resetOtpExpires = Date.now() + 10 * 60 * 1000; // 10 mins
+    await user.save();
+
+    return res.json({
+      message: 'OTP sent to your registered email.',
+      demoOtp: otp,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/forgot-password/verify-reset', async (req, res) => {
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
+    const otp = (req.body.otp || '').trim();
+    const newPassword = (req.body.newPassword || '').trim();
+
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: 'Invalid email format.' });
+    }
+    if (!otp || otp.length !== 6) {
+      return res.status(400).json({ error: 'Enter the 6-digit OTP.' });
+    }
+    if (newPassword.length < 4) {
+      return res.status(400).json({ error: 'New password must be at least 4 characters.' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: 'Account not found.' });
+    }
+    if (!user.resetOtp || user.resetOtp !== otp) {
+      return res.status(401).json({ error: 'Invalid OTP. Please check and try again.' });
+    }
+    if (Date.now() > user.resetOtpExpires) {
+      return res.status(401).json({ error: 'OTP expired. Request a new OTP.' });
+    }
+
+    user.password = newPassword;
+    user.resetOtp = '';
+    user.resetOtpExpires = 0;
+    await user.save();
+
+    return res.json({ message: 'Password reset successful! Please Sign In with your new password.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
 // ORGANIZATION ROUTES
 // ==========================================
 app.get('/api/organizations', async (req, res) => {
@@ -170,8 +343,9 @@ app.get('/api/organizations', async (req, res) => {
 
 app.post('/api/organizations', async (req, res) => {
   try {
-    const { name, email, framework = 'SOC 2', cloud = 'AWS', companySize, targetTimeline } = req.body;
-    if (!name || !email) {
+    const { name, email, contactEmail, framework = 'SOC 2', cloud = 'AWS', cloudEnvironment, companySize, targetTimeline } = req.body;
+    const finalEmail = (email || contactEmail || '').trim();
+    if (!name || !finalEmail) {
       return res.status(400).json({ error: 'Organization name and email are required' });
     }
 
@@ -181,9 +355,9 @@ app.post('/api/organizations', async (req, res) => {
     const newOrg = await Organization.create({
       id: orgId,
       name: name.trim(),
-      email: email.trim(),
+      email: finalEmail,
       framework,
-      cloud,
+      cloud: cloudEnvironment || cloud,
       companySize,
       targetTimeline,
       status: 'Active',
@@ -193,7 +367,7 @@ app.post('/api/organizations', async (req, res) => {
     const createdMember = await Member.create({
       orgId,
       name: `${name.trim()} Lead`,
-      email: email.trim(),
+      email: finalEmail,
       role: 'Super Admin',
       status: 'Active',
     });
@@ -226,7 +400,8 @@ app.put('/api/organizations/:orgId/status', async (req, res) => {
 // ==========================================
 app.get('/api/members', async (req, res) => {
   try {
-    const filter = req.query.orgId ? { orgId: req.query.orgId } : {};
+    const orgFilter = req.query.orgId || req.query.organizationId;
+    const filter = orgFilter ? { orgId: orgFilter } : {};
     const members = await Member.find(filter).sort({ createdAt: 1 });
     res.json(members);
   } catch (err) {
@@ -236,7 +411,10 @@ app.get('/api/members', async (req, res) => {
 
 app.post('/api/members', async (req, res) => {
   try {
-    const newMember = await Member.create(req.body);
+    const newMember = await Member.create({
+      ...req.body,
+      orgId: req.body.orgId || req.body.organizationId || 'ORG-101',
+    });
     res.status(201).json(newMember);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -266,11 +444,12 @@ app.delete('/api/members/:id', async (req, res) => {
 });
 
 // ==========================================
-// CONTROL ROUTES (Status + Evidence Notes)
+// CONTROL ROUTES
 // ==========================================
 app.get('/api/controls', async (req, res) => {
   try {
-    const filter = req.query.orgId ? { orgId: req.query.orgId } : {};
+    const orgFilter = req.query.orgId || req.query.organizationId;
+    const filter = orgFilter ? { orgId: orgFilter } : {};
     const controls = await Control.find(filter);
     res.json(controls);
   } catch (err) {
@@ -280,7 +459,12 @@ app.get('/api/controls', async (req, res) => {
 
 app.post('/api/controls', async (req, res) => {
   try {
-    const newControl = new Control(req.body);
+    const newControl = new Control({
+      ...req.body,
+      orgId: req.body.orgId || req.body.organizationId || 'ORG-101',
+      id: req.body.id || req.body.code || `C-${Date.now()}`,
+      name: req.body.name || req.body.title,
+    });
     const savedControl = await newControl.save();
     res.json(savedControl);
   } catch (err) {
@@ -293,6 +477,7 @@ app.put('/api/controls/:id', async (req, res) => {
     const updateFields = {};
     if (req.body.status !== undefined) updateFields.status = req.body.status;
     if (req.body.evidence !== undefined) updateFields.evidence = req.body.evidence;
+    if (req.body.evidenceNote !== undefined) updateFields.evidence = req.body.evidenceNote;
     if (req.body.updatedBy !== undefined) updateFields.updatedBy = req.body.updatedBy;
 
     const updated = await Control.findByIdAndUpdate(
@@ -312,65 +497,6 @@ app.delete('/api/controls/:id', async (req, res) => {
     res.json({ message: 'Control deleted successfully' });
   } catch (err) {
     res.status(400).json({ error: err.message });
-  }
-});
-
-// ==========================================
-// AUTH LOGIN ROUTE
-// ==========================================
-const DEMO_USERS = [
-  {
-    name: 'Ganesh Kumar',
-    email: 'ganesh@complianceguard.app',
-    password: 'Pass@123',
-    role: 'Super Admin',
-  },
-  {
-    name: 'Admin Lead',
-    email: 'admin@complianceguard.io',
-    password: 'Admin@123',
-    role: 'Super Admin',
-  },
-  {
-    name: 'Security Auditor',
-    email: 'auditor@complianceguard.io',
-    password: 'Audit@123',
-    role: 'Auditor',
-  },
-  {
-    name: 'Compliance Analyst',
-    email: 'analyst@complianceguard.io',
-    password: 'Edit@123',
-    role: 'Editor',
-  },
-];
-
-app.post('/api/login', async (req, res) => {
-  try {
-    const email = (req.body.email || '').trim().toLowerCase();
-    const password = (req.body.password || '').trim();
-
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required.' });
-    }
-
-    const matchedUser = DEMO_USERS.find(
-      (u) => u.email.toLowerCase() === email && u.password === password
-    );
-
-    if (!matchedUser) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-
-    return res.json({
-      user: {
-        name: matchedUser.name,
-        email: matchedUser.email,
-        role: req.body.role || matchedUser.role,
-      },
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
   }
 });
 
