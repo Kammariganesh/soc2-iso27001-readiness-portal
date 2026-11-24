@@ -46,7 +46,9 @@ const organizationSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    email: { type: String, required: true },
+    email: { type: String, required: true, lowercase: true },
+    ownerEmail: { type: String, required: true, lowercase: true, index: true },
+    industry: { type: String, default: 'SaaS / Technology' },
     framework: { type: String, default: 'SOC 2' },
     cloud: { type: String, default: 'AWS' },
     companySize: { type: String, default: '1-50 Employees' },
@@ -60,7 +62,7 @@ const memberSchema = new mongoose.Schema(
   {
     orgId: { type: String, required: true },
     name: { type: String, required: true },
-    email: { type: String, required: true },
+    email: { type: String, required: true, lowercase: true },
     role: { type: String, default: 'Editor' },
     status: { type: String, default: 'Active' },
   },
@@ -73,6 +75,7 @@ const controlSchema = new mongoose.Schema(
     id: { type: String, required: true },
     name: { type: String, required: true },
     framework: { type: String, default: 'SOC 2' },
+    description: { type: String, default: '' },
     status: { type: String, default: 'In Progress' },
     evidence: { type: String, default: '' },
     updatedBy: { type: String, default: 'Super Admin' },
@@ -86,9 +89,9 @@ const Member = mongoose.model('Member', memberSchema);
 const Control = mongoose.model('Control', controlSchema);
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+const DEMO_OWNER_EMAIL = 'ganesh@complianceguard.app';
 
 async function sendOtpEmail(toEmail, otp) {
-  // Primary: Resend HTTPS API (Works on Render without SMTP port blocks)
   if (process.env.RESEND_API_KEY) {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -112,7 +115,6 @@ async function sendOtpEmail(toEmail, otp) {
     return { sent: true };
   }
 
-  // Fallback: Gmail SMTP if configured
   if (nodemailer && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
@@ -144,49 +146,53 @@ async function sendOtpEmail(toEmail, otp) {
   };
 }
 
-// Helper: Starter Controls (c1-c4)
+// Helper: Demo Starter Controls (c1-c4)
 function buildStarterControls(orgId, framework = 'SOC 2') {
   return [
     {
       orgId,
-      id: 'c1',
-      name: 'Access Control & MFA',
+      id: 'CC6.1',
+      name: 'Review access permissions',
       framework,
-      status: 'Compliant',
-      evidence: 'MFA enforced across SSO and cloud root/IAM accounts',
-      updatedBy: 'Super Admin',
-    },
-    {
-      orgId,
-      id: 'c2',
-      name: 'Database Access & Encryption',
-      framework,
+      description: 'Review user access to critical systems every quarter. Confirm permissions follow least privilege and remove access that is no longer required.',
       status: 'In Progress',
-      evidence: 'AES-256 encryption enabled at rest; TLS 1.3 in transit pending audit sign-off',
+      evidence: 'Q4 access review log attached',
       updatedBy: 'Super Admin',
     },
     {
       orgId,
-      id: 'c3',
-      name: 'Network Firewall & Segmentation',
+      id: 'CC1.1',
+      name: 'Maintain security policies',
       framework,
+      description: 'Establish, document, and review information security policies annually across all engineering and operations teams.',
       status: 'Non-Compliant',
-      evidence: 'Staging VPC security group port rules under review',
+      evidence: 'Draft policy awaiting CISO approval',
       updatedBy: 'Super Admin',
     },
     {
       orgId,
-      id: 'c4',
-      name: 'System Logging & Monitoring',
+      id: 'CC7.2',
+      name: 'Monitor system activity',
       framework,
+      description: 'Continuously monitor production infrastructure and alert on anomalous access or configuration changes.',
       status: 'Compliant',
       evidence: 'Centralized audit logs retained for 90+ days with alerting',
+      updatedBy: 'Super Admin',
+    },
+    {
+      orgId,
+      id: 'A1.2',
+      name: 'Back up critical data',
+      framework,
+      description: 'Perform automated encrypted backups daily and test restoration procedures periodically.',
+      status: 'Compliant',
+      evidence: 'Automated daily snapshots verified',
       updatedBy: 'Super Admin',
     },
   ];
 }
 
-// Seed default users, organizations & starter data
+// Seed default users, demo organizations & demo starter data
 async function seedInitialData() {
   try {
     const defaultUsers = [
@@ -230,13 +236,21 @@ async function seedInitialData() {
       );
     }
 
+    // Backfill ownerEmail on legacy demo orgs if missing
+    await Organization.updateMany(
+      { id: { $in: ['ORG-101', 'ORG-102'] }, ownerEmail: { $exists: false } },
+      { $set: { ownerEmail: DEMO_OWNER_EMAIL } }
+    );
+
     const orgCount = await Organization.countDocuments();
     if (orgCount === 0) {
       await Organization.insertMany([
         {
           id: 'ORG-101',
-          name: 'FinScale Cloud Inc',
-          email: 'security@finscale.io',
+          name: 'Acme Inc.',
+          email: 'security@acmeinc.io',
+          ownerEmail: DEMO_OWNER_EMAIL,
+          industry: 'FinTech & Cloud',
           framework: 'SOC 2',
           cloud: 'AWS',
           status: 'Active',
@@ -245,6 +259,8 @@ async function seedInitialData() {
           id: 'ORG-102',
           name: 'DataPulse Systems',
           email: 'grc@datapulse.dev',
+          ownerEmail: DEMO_OWNER_EMAIL,
+          industry: 'SaaS / AI',
           framework: 'ISO 27001',
           cloud: 'Azure',
           status: 'In Review',
@@ -252,11 +268,13 @@ async function seedInitialData() {
       ]);
 
       await Member.insertMany([
+        { orgId: 'ORG-101', name: 'Ganesh Kumar', email: 'ganesh@complianceguard.app', role: 'Super Admin', status: 'Active' },
+        { orgId: 'ORG-101', name: 'Kamari Ganesh', email: 'kammariganesh777@gmail.com', role: 'Super Admin', status: 'Active' },
         { orgId: 'ORG-101', name: 'Admin Lead', email: 'admin@complianceguard.io', role: 'Super Admin', status: 'Active' },
         { orgId: 'ORG-101', name: 'Security Auditor', email: 'auditor@complianceguard.io', role: 'Auditor', status: 'Active' },
         { orgId: 'ORG-101', name: 'Compliance Analyst', email: 'analyst@complianceguard.io', role: 'Editor', status: 'Active' },
+        { orgId: 'ORG-102', name: 'Ganesh Kumar', email: 'ganesh@complianceguard.app', role: 'Super Admin', status: 'Active' },
         { orgId: 'ORG-102', name: 'DataPulse Admin', email: 'admin@datapulse.dev', role: 'Super Admin', status: 'Active' },
-        { orgId: 'ORG-102', name: 'ISO Auditor', email: 'auditor@datapulse.dev', role: 'Auditor', status: 'Active' },
       ]);
 
       const existingControls = await Control.countDocuments();
@@ -269,7 +287,7 @@ async function seedInitialData() {
         await Control.updateMany({ orgId: { $exists: false } }, { $set: { orgId: 'ORG-101' } });
         await Control.insertMany(buildStarterControls('ORG-102', 'ISO 27001'));
       }
-      console.log('Seeded default users, organizations, members, and starter controls!');
+      console.log('Seeded demo users, isolated demo organizations, members, and starter controls!');
     }
   } catch (err) {
     console.log('Seed check error:', err.message);
@@ -410,11 +428,29 @@ app.post('/api/forgot-password/verify-reset', async (req, res) => {
 });
 
 // ==========================================
-// ORGANIZATION ROUTES
+// ORGANIZATION ROUTES (USER-WISE ISOLATED)
 // ==========================================
 app.get('/api/organizations', async (req, res) => {
   try {
-    const orgs = await Organization.find().sort({ createdAt: -1 });
+    const userEmail = (req.query.email || req.query.ownerEmail || '').trim().toLowerCase();
+
+    // Strict isolation: if no email is passed, return empty array instead of leaking all orgs
+    if (!userEmail) {
+      return res.json([]);
+    }
+
+    // Include organizations where user is owner OR an invited team member
+    const memberRecords = await Member.find({ email: userEmail });
+    const memberOrgIds = memberRecords.map((m) => m.orgId);
+
+    const orgs = await Organization.find({
+      $or: [
+        { ownerEmail: userEmail },
+        { email: userEmail },
+        { id: { $in: memberOrgIds } },
+      ],
+    }).sort({ createdAt: -1 });
+
     res.json(orgs);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -423,19 +459,36 @@ app.get('/api/organizations', async (req, res) => {
 
 app.post('/api/organizations', async (req, res) => {
   try {
-    const { name, email, contactEmail, framework = 'SOC 2', cloud = 'AWS', cloudEnvironment, companySize, targetTimeline } = req.body;
-    const finalEmail = (email || contactEmail || '').trim();
+    const {
+      name,
+      email,
+      contactEmail,
+      ownerEmail,
+      ownerName,
+      industry = 'SaaS / Technology',
+      framework = 'SOC 2',
+      cloud = 'AWS',
+      cloudEnvironment,
+      companySize = '1-50 Employees',
+      targetTimeline = 'Within 3 Months',
+      seedControls = false, // False by default so new commercial companies start at 0% empty controls
+    } = req.body;
+
+    const normalizedOwner = (ownerEmail || email || contactEmail || '').trim().toLowerCase();
+    const finalEmail = (email || contactEmail || normalizedOwner || '').trim().toLowerCase();
+
     if (!name || !finalEmail) {
       return res.status(400).json({ error: 'Organization name and email are required' });
     }
 
-    const count = await Organization.countDocuments();
-    const orgId = `ORG-${101 + count}`;
+    const orgId = `ORG-${Date.now().toString().slice(-6)}`;
 
     const newOrg = await Organization.create({
       id: orgId,
       name: name.trim(),
       email: finalEmail,
+      ownerEmail: normalizedOwner || finalEmail,
+      industry,
       framework,
       cloud: cloudEnvironment || cloud,
       companySize,
@@ -443,11 +496,14 @@ app.post('/api/organizations', async (req, res) => {
       status: 'Active',
     });
 
-    const createdControls = await Control.insertMany(buildStarterControls(orgId, framework));
+    const createdControls = seedControls
+      ? await Control.insertMany(buildStarterControls(orgId, framework))
+      : [];
+
     const createdMember = await Member.create({
       orgId,
-      name: `${name.trim()} Lead`,
-      email: finalEmail,
+      name: (ownerName || `${name.trim()} Admin`).trim(),
+      email: normalizedOwner || finalEmail,
       role: 'Super Admin',
       status: 'Active',
     });
@@ -481,8 +537,8 @@ app.put('/api/organizations/:orgId/status', async (req, res) => {
 app.get('/api/members', async (req, res) => {
   try {
     const orgFilter = req.query.orgId || req.query.organizationId;
-    const filter = orgFilter ? { orgId: orgFilter } : {};
-    const members = await Member.find(filter).sort({ createdAt: 1 });
+    if (!orgFilter) return res.json([]);
+    const members = await Member.find({ orgId: orgFilter }).sort({ createdAt: 1 });
     res.json(members);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -493,7 +549,8 @@ app.post('/api/members', async (req, res) => {
   try {
     const newMember = await Member.create({
       ...req.body,
-      orgId: req.body.orgId || req.body.organizationId || 'ORG-101',
+      email: (req.body.email || '').trim().toLowerCase(),
+      orgId: req.body.orgId || req.body.organizationId,
     });
     res.status(201).json(newMember);
   } catch (err) {
@@ -529,8 +586,8 @@ app.delete('/api/members/:id', async (req, res) => {
 app.get('/api/controls', async (req, res) => {
   try {
     const orgFilter = req.query.orgId || req.query.organizationId;
-    const filter = orgFilter ? { orgId: orgFilter } : {};
-    const controls = await Control.find(filter);
+    if (!orgFilter) return res.json([]);
+    const controls = await Control.find({ orgId: orgFilter }).sort({ createdAt: -1 });
     res.json(controls);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -541,8 +598,8 @@ app.post('/api/controls', async (req, res) => {
   try {
     const newControl = new Control({
       ...req.body,
-      orgId: req.body.orgId || req.body.organizationId || 'ORG-101',
-      id: req.body.id || req.body.code || `C-${Date.now()}`,
+      orgId: req.body.orgId || req.body.organizationId,
+      id: req.body.id || req.body.code || `CC${Math.floor(1 + Math.random() * 9)}.${Math.floor(1 + Math.random() * 9)}`,
       name: req.body.name || req.body.title,
     });
     const savedControl = await newControl.save();
