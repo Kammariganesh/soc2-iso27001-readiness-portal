@@ -25,23 +25,23 @@ function validatePassword(pw) {
 }
 
 async function sendOtpEmail(toEmail, otpCode) {
-  const gmailUser = (process.env.GMAIL_USER || '').trim();
-  const gmailPass = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+  const user = (process.env.EMAIL_USER || process.env.GMAIL_USER || '').trim();
+  const pass = (process.env.EMAIL_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
 
-  if (!gmailUser || !gmailPass) {
-    throw new Error('GMAIL_USER or GMAIL_APP_PASSWORD is missing in Render Environment.');
+  if (!user || !pass) {
+    throw new Error('EMAIL_USER or EMAIL_PASS is missing in Render Environment.');
   }
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-      user: gmailUser,
-      pass: gmailPass,
+      user,
+      pass,
     },
   });
 
   await transporter.sendMail({
-    from: `"ComplianceGuard" <${gmailUser}>`,
+    from: `"ComplianceGuard" <${user}>`,
     to: toEmail,
     subject: 'ComplianceGuard Password Reset OTP',
     text: `Your OTP to reset your ComplianceGuard password is: ${otpCode}. Valid for 10 minutes.`,

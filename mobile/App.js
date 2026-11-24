@@ -3,6 +3,7 @@ import {
   SafeAreaView,
   View,
   Text,
+  Image,
   Pressable,
   TextInput,
   ScrollView,
@@ -17,37 +18,111 @@ import {
 const API_BASE = 'https://soc2-iso27001-readiness-portal.onrender.com/api';
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
+// Place your own photo at: D:\soc2-project\mobile\assets\profile.jpg
+let PROFILE_PHOTO = null;
+try {
+  PROFILE_PHOTO = require('./assets/profile.jpg');
+} catch (e) {
+  PROFILE_PHOTO = null;
+}
+
 const ONBOARDING_SLIDES = [
   {
-    badge: 'STEP 1 OF 3 • ONBOARDING',
-    title: 'Simple and Clear App Onboarding',
-    subtitle:
-      'Set up SOC 2 and ISO 27001 readiness from your phone with clear mobile-first flows.',
-    highlight: 'SOC 2 • ISO 27001',
+    step: '01 • WELCOME',
+    eyebrow: 'ONE PLACE. FULL CONFIDENCE.',
+    title: 'Stay Compliant.\nStay Secure.',
+    subtitle: 'Manage your compliance requirements in one place.',
+    cta: 'Get Started',
   },
   {
-    badge: 'STEP 2 OF 3 • CONTROLS & EVIDENCE',
-    title: 'Track Controls & Audit Evidence',
+    step: '02 • MANAGE COMPLIANCE',
+    eyebrow: 'LESS COMPLEXITY. MORE CONTROL.',
+    title: 'Simple and Smart\nCompliance Management',
     subtitle:
-      'Monitor control statuses, attach audit proof notes, and switch roles (Super Admin, Editor, Auditor).',
-    highlight: 'Real-Time MongoDB Sync',
+      'Manage controls, track progress, and ensure compliance effortlessly.',
+    cta: 'Next',
   },
   {
-    badge: 'STEP 3 OF 3 • AUDIT READINESS',
-    title: 'Stay Ready for Audits Anywhere',
-    subtitle:
-      'Check organization readiness scores, manage team access, and review audit reports smoothly.',
-    highlight: 'Connected to Live API',
+    step: '03 • AUDIT READY',
+    eyebrow: "READY FOR WHAT'S NEXT.",
+    title: 'Achieve Compliance\nwith Confidence',
+    subtitle: 'Get real-time insights and stay audit-ready.',
+    cta: "Let's Go",
+  },
+];
+
+const INITIAL_NOTIFICATIONS = [
+  {
+    id: 'n1',
+    section: 'TODAY',
+    type: 'Updates',
+    icon: '📈',
+    title: 'Control status updated',
+    body: 'CC6.1 is now In Progress. Updated by Alex Morgan.',
+    time: '26 mins ago',
+    unread: true,
+  },
+  {
+    id: 'n2',
+    section: 'TODAY',
+    type: 'Alerts',
+    icon: '⚠️',
+    title: 'Evidence expires soon',
+    body: 'Your SOC 2 access review evidence expires in 3 days.',
+    time: '1 hour ago',
+    unread: true,
+  },
+  {
+    id: 'n3',
+    section: 'TODAY',
+    type: 'Updates',
+    icon: '🔄',
+    title: 'Workspace is up to date',
+    body: 'All controls and evidence have synced successfully.',
+    time: '2 hours ago',
+    unread: true,
+  },
+  {
+    id: 'n4',
+    section: 'YESTERDAY',
+    type: 'Updates',
+    icon: '✅',
+    title: 'Another control completed',
+    body: 'CC7.2 Monitor system activity was marked Compliant.',
+    time: 'Yesterday • 16:42',
+    unread: false,
+  },
+];
+
+const FAQ_ITEMS = [
+  {
+    id: 'faq1',
+    q: 'How do I add a control?',
+    a: 'Go to Controls and tap Add Control. Choose a framework, add the details then tap Save.',
+  },
+  {
+    id: 'faq2',
+    q: 'What counts as evidence?',
+    a: 'Policies, access logs, configuration screenshots, and audit notes linked to a control count as evidence.',
+  },
+  {
+    id: 'faq3',
+    q: 'How is readiness calculated?',
+    a: 'Readiness is the percentage of Compliant controls out of total controls in the active workspace.',
   },
 ];
 
 const STATUS_OPTIONS = ['Compliant', 'In Progress', 'Non-Compliant'];
 const ROLES = ['Super Admin', 'Editor', 'Auditor'];
+const INDUSTRIES = ['SaaS / Technology', 'FinTech & Cloud', 'Healthcare', 'E-Commerce'];
+const COMPANY_SIZES = ['1-50 Employees', '51-200 Employees', '201-1000 Employees', '1000+'];
+const FRAMEWORKS = ['SOC 2', 'ISO 27001'];
+const CLOUD_PROVIDERS = ['AWS', 'Azure', 'Google Cloud', 'Other'];
 
 export default function App() {
   const authScrollRef = useRef(null);
 
-  // 'onboarding' | 'auth' | 'workspace' | 'dashboard'
+  // 'onboarding' | 'auth' | 'workspace' | 'create_company' | 'dashboard'
   const [screen, setScreen] = useState('onboarding');
   const [stepIndex, setStepIndex] = useState(0);
 
@@ -56,6 +131,9 @@ export default function App() {
   const [authName, setAuthName] = useState('');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
 
   // Forgot Password OTP states
@@ -68,23 +146,36 @@ export default function App() {
   const [authInfo, setAuthInfo] = useState('');
   const [currentUser, setCurrentUser] = useState(null);
 
-  // Screen 2: Workspaces
+  // Workspaces state (User-Wise Isolated)
   const [orgs, setOrgs] = useState([]);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
   const [apiError, setApiError] = useState('');
   const [selectedOrg, setSelectedOrg] = useState(null);
 
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  // Create Company form state (Figma Screen 15)
   const [orgName, setOrgName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
-  const [framework, setFramework] = useState('SOC 2 Type II');
+  const [industry, setIndustry] = useState('SaaS / Technology');
+  const [companySize, setCompanySize] = useState('1-50 Employees');
+  const [framework, setFramework] = useState('SOC 2');
   const [cloudEnv, setCloudEnv] = useState('AWS');
   const [creatingOrg, setCreatingOrg] = useState(false);
 
-  // Dashboard Tabs ('dashboard' | 'controls' | 'profile' | 'settings')
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // Dashboard Tabs ('home' | 'controls' | 'profile' | 'settings')
+  // Plus sub-views inside profile/settings/home:
+  // null | 'notifications' | 'support' | 'activity' | 'about' | 'detail'
+  const [activeTab, setActiveTab] = useState('home');
+  const [subScreen, setSubScreen] = useState(null);
+  const [selectedControl, setSelectedControl] = useState(null);
+
   const [activeRole, setActiveRole] = useState('Super Admin');
   const [syncingData, setSyncingData] = useState(false);
+
+  // Notifications & FAQ states
+  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [notifFilter, setNotifFilter] = useState('All');
+  const [openFaqId, setOpenFaqId] = useState('faq1');
+  const [supportMessage, setSupportMessage] = useState('');
 
   // Controls state
   const [controls, setControls] = useState([]);
@@ -99,11 +190,14 @@ export default function App() {
   const [showAddControl, setShowAddControl] = useState(false);
   const [newCode, setNewCode] = useState('');
   const [newTitle, setNewTitle] = useState('');
-  const [newCategory, setNewCategory] = useState('Access Control');
-  const [newOwner, setNewOwner] = useState('Security Lead');
+  const [newFramework, setNewFramework] = useState('SOC 2');
+  const [newDescription, setNewDescription] = useState('');
+  const [newStatus, setNewStatus] = useState('In Progress');
+  const [newEvidence, setNewEvidence] = useState('');
+  const [newOwner, setNewOwner] = useState('Alex Morgan');
   const [savingControl, setSavingControl] = useState(false);
 
-  // Members state (Profile / Team)
+  // Members state (Team)
   const [members, setMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [memberName, setMemberName] = useState('');
@@ -116,26 +210,34 @@ export default function App() {
   const isLastStep = stepIndex === ONBOARDING_SLIDES.length - 1;
   const isAuditor = activeRole === 'Auditor';
   const isSuperAdmin = activeRole === 'Super Admin';
+  const unreadCount = notifications.filter((n) => n.unread).length;
 
   const showToast = (msg) => {
     setStatusBanner(msg);
     setTimeout(() => setStatusBanner(''), 3000);
   };
 
-  const scrollAuthUp = (offset = 160) => {
+  const scrollAuthUp = (offset = 140) => {
     setTimeout(() => {
       authScrollRef.current?.scrollTo({ y: offset, animated: true });
     }, 150);
   };
 
-  // Handle Android Hardware Back Button inside App
   useEffect(() => {
     const onHardwareBack = () => {
       if (screen === 'dashboard') {
-        if (activeTab !== 'dashboard') {
-          setActiveTab('dashboard');
+        if (subScreen) {
+          setSubScreen(null);
           return true;
         }
+        if (activeTab !== 'home') {
+          setActiveTab('home');
+          return true;
+        }
+        setScreen('workspace');
+        return true;
+      }
+      if (screen === 'create_company') {
         setScreen('workspace');
         return true;
       }
@@ -164,19 +266,21 @@ export default function App() {
 
     const subscription = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
     return () => subscription.remove();
-  }, [screen, activeTab, authMode, stepIndex]);
+  }, [screen, activeTab, subScreen, authMode, stepIndex]);
 
-  const loadOrganizations = async () => {
+  const loadOrganizations = async (userObj = currentUser) => {
+    const userEmail = (userObj?.email || authEmail || '').trim().toLowerCase();
     setLoadingOrgs(true);
     setApiError('');
     try {
-      const res = await fetch(`${API_BASE}/organizations`);
+      const query = userEmail ? `?email=${encodeURIComponent(userEmail)}` : '';
+      const res = await fetch(`${API_BASE}/organizations${query}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const list = Array.isArray(data) ? data : data.organizations || [];
       setOrgs(list);
     } catch (err) {
-      setApiError('Unable to load workspaces from server. You can retry or create one.');
+      setApiError('Unable to load workspaces from server. Tap Refresh or create a company.');
     } finally {
       setLoadingOrgs(false);
     }
@@ -221,20 +325,30 @@ export default function App() {
     }
   };
 
-  const goToAuthScreen = () => {
+  const goToAuthScreen = (mode = 'login') => {
+    setAuthMode(mode);
     setAuthError('');
     setAuthInfo('');
     setScreen('auth');
   };
 
-  const goToWorkspaceScreen = () => {
+  const goToWorkspaceScreen = (userObj = currentUser) => {
+    setSubScreen(null);
     setScreen('workspace');
-    loadOrganizations();
+    loadOrganizations(userObj);
+  };
+
+  const openCreateCompanyScreen = () => {
+    setApiError('');
+    setContactEmail((prev) => prev || currentUser?.email || '');
+    setScreen('create_company');
   };
 
   const openWorkspaceDashboard = (org) => {
     setSelectedOrg(org);
-    setActiveTab('dashboard');
+    setActiveTab('home');
+    setSubScreen(null);
+    setShowAddControl(false);
     setScreen('dashboard');
     loadDashboardData(org, false);
   };
@@ -243,7 +357,7 @@ export default function App() {
     if (!isLastStep) {
       setStepIndex((prev) => prev + 1);
     } else {
-      goToAuthScreen();
+      goToAuthScreen('login');
     }
   };
 
@@ -254,19 +368,30 @@ export default function App() {
   const handleAuthSubmit = async () => {
     const cleanEmail = authEmail.trim().toLowerCase();
     const cleanPassword = authPassword.trim();
+    const cleanConfirm = authConfirmPassword.trim();
     const cleanName = authName.trim();
 
     if (!EMAIL_REGEX.test(cleanEmail)) {
-      setAuthError('Enter a valid email address (e.g. name@company.com or name@gmail.com).');
+      setAuthError('Enter a valid email address (e.g. you@company.com).');
       return;
     }
     if (!cleanPassword || cleanPassword.length < 4) {
       setAuthError('Password must be at least 4 characters.');
       return;
     }
-    if (authMode === 'signup' && !cleanName) {
-      setAuthError('Please enter your full name to sign up.');
-      return;
+    if (authMode === 'signup') {
+      if (!cleanName) {
+        setAuthError('Please enter your username or full name.');
+        return;
+      }
+      if (cleanConfirm && cleanConfirm !== cleanPassword) {
+        setAuthError('Passwords do not match.');
+        return;
+      }
+      if (!agreeTerms) {
+        setAuthError('Please agree to the Terms & Conditions and Privacy Policy.');
+        return;
+      }
     }
 
     setAuthLoading(true);
@@ -298,14 +423,17 @@ export default function App() {
         role: authRole,
       };
 
-      setCurrentUser({
+      const sessionUser = {
         name: verifiedUser.name,
-        email: verifiedUser.email,
+        email: verifiedUser.email.toLowerCase(),
         role: verifiedUser.role || authRole,
         authMethod: authMode === 'signup' ? 'Signed Up' : 'Signed In',
-      });
-      setActiveRole(verifiedUser.role || authRole);
-      goToWorkspaceScreen();
+      };
+
+      setCurrentUser(sessionUser);
+      setActiveRole(sessionUser.role);
+      setOrgs([]);
+      goToWorkspaceScreen(sessionUser);
     } catch (err) {
       setAuthError('Could not reach server. Please check internet and try again.');
     } finally {
@@ -316,13 +444,13 @@ export default function App() {
   const handleSendResetOtp = async () => {
     const cleanEmail = authEmail.trim().toLowerCase();
     if (!EMAIL_REGEX.test(cleanEmail)) {
-      setAuthError('Enter a valid registered email (e.g. name@company.com).');
+      setAuthError('Enter a valid registered email (e.g. you@company.com).');
       return;
     }
 
     setAuthLoading(true);
     setAuthError('');
-    setAuthInfo('Sending OTP...');
+    setAuthInfo('Sending reset link / OTP...');
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
@@ -349,7 +477,7 @@ export default function App() {
       clearTimeout(timer);
       setAuthInfo('');
       if (err.name === 'AbortError') {
-        setAuthError('Server took too long to wake up. Tap Send OTP again.');
+        setAuthError('Server took too long to wake up. Tap Send Reset Link again.');
       } else {
         setAuthError('Network error while sending OTP. Please try again.');
       }
@@ -409,6 +537,7 @@ export default function App() {
     setAuthName('Ganesh Kumar');
     setAuthEmail('ganesh@complianceguard.app');
     setAuthPassword('Pass@123');
+    setAuthConfirmPassword('Pass@123');
     setAuthRole('Super Admin');
     setAuthError('');
     setAuthInfo('Demo credentials filled. Tap Sign In.');
@@ -417,40 +546,59 @@ export default function App() {
   const handleSignOut = () => {
     setCurrentUser(null);
     setSelectedOrg(null);
+    setSubScreen(null);
+    setOrgs([]);
     setAuthPassword('');
+    setAuthConfirmPassword('');
     setAuthInfo('');
     setAuthMode('login');
     setScreen('auth');
   };
 
   const handleCreateOrganization = async () => {
-    if (!orgName.trim() || !EMAIL_REGEX.test(contactEmail.trim())) {
-      setApiError('Enter Organization Name and a valid Contact Email (e.g. security@company.com).');
+    const cleanName = orgName.trim();
+    const cleanContact = (contactEmail || currentUser?.email || '').trim().toLowerCase();
+    const ownerEmail = (currentUser?.email || cleanContact).trim().toLowerCase();
+
+    if (!cleanName) {
+      setApiError('Enter Company Name to create your workspace.');
       return;
     }
+    if (!EMAIL_REGEX.test(cleanContact)) {
+      setApiError('Enter a valid Contact Email (e.g. security@company.com).');
+      return;
+    }
+
     setCreatingOrg(true);
     setApiError('');
+
     try {
       const res = await fetch(`${API_BASE}/organizations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: orgName.trim(),
-          email: contactEmail.trim(),
+          name: cleanName,
+          email: cleanContact,
+          ownerEmail,
+          ownerName: currentUser?.name || `${cleanName} Admin`,
+          industry,
+          companySize,
           framework,
           cloud: cloudEnv,
+          seedControls: false,
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const created = await res.json();
-      const newOrgObj = created.organization || created;
+      const data = await res.json();
+      if (!res.ok) {
+        setApiError(data.error || 'Could not create company workspace.');
+        return;
+      }
+
+      const newOrgObj = data.organization || data;
       setOrgName('');
       setContactEmail('');
-      setShowCreateForm(false);
-      await loadOrganizations();
-      if (newOrgObj && (newOrgObj._id || newOrgObj.id || newOrgObj.name)) {
-        openWorkspaceDashboard(newOrgObj);
-      }
+      await loadOrganizations(currentUser);
+      openWorkspaceDashboard(newOrgObj);
     } catch (err) {
       setApiError('Could not create workspace right now. Please try again.');
     } finally {
@@ -467,6 +615,9 @@ export default function App() {
     setControls((prev) =>
       prev.map((c) => ((c._id || c.id) === id ? { ...c, ...updates } : c))
     );
+    if (selectedControl && (selectedControl._id || selectedControl.id) === id) {
+      setSelectedControl((prev) => ({ ...prev, ...updates }));
+    }
 
     try {
       await fetch(`${API_BASE}/controls/${id}`, {
@@ -474,6 +625,19 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...control, ...updates }),
       });
+      setNotifications((prev) => [
+        {
+          id: `n-${Date.now()}`,
+          section: 'TODAY',
+          type: 'Updates',
+          icon: '📈',
+          title: 'Control status updated',
+          body: `${control.id || control.code || 'Control'} marked ${updates.status || control.status}.`,
+          time: 'Just now',
+          unread: true,
+        },
+        ...prev,
+      ]);
       showToast('Saved to MongoDB');
     } catch (err) {
       showToast('Updated locally (sync pending)');
@@ -490,11 +654,12 @@ export default function App() {
     const payload = {
       id: newCode.trim().toUpperCase(),
       name: newTitle.trim(),
-      framework: selectedOrg?.framework || 'SOC 2',
-      status: 'In Progress',
-      evidence: '',
-      orgId: selectedOrg?.id || selectedOrg?._id || 'ORG-101',
-      updatedBy: activeRole,
+      description: newDescription.trim(),
+      framework: newFramework || selectedOrg?.framework || 'SOC 2',
+      status: newStatus || 'In Progress',
+      evidence: newEvidence.trim(),
+      orgId: selectedOrg?.id || selectedOrg?._id,
+      updatedBy: newOwner.trim() || 'Alex Morgan',
     };
 
     try {
@@ -506,13 +671,15 @@ export default function App() {
       if (res.ok) {
         const savedCtrl = await res.json();
         setControls((prev) => [savedCtrl, ...prev]);
-        showToast('New control added');
+        showToast('Control added');
       } else {
         setControls((prev) => [{ ...payload, _id: Date.now().toString() }, ...prev]);
         showToast('Control added locally');
       }
       setNewCode('');
       setNewTitle('');
+      setNewDescription('');
+      setNewEvidence('');
       setShowAddControl(false);
     } catch (err) {
       setControls((prev) => [{ ...payload, _id: Date.now().toString() }, ...prev]);
@@ -529,6 +696,10 @@ export default function App() {
     }
     setControls((prev) => prev.filter((c) => (c._id || c.id) !== id));
     setConfirmDeleteId(null);
+    if (selectedControl && (selectedControl._id || selectedControl.id) === id) {
+      setSelectedControl(null);
+      setSubScreen(null);
+    }
     try {
       await fetch(`${API_BASE}/controls/${id}`, { method: 'DELETE' });
       showToast('Control deleted');
@@ -549,9 +720,9 @@ export default function App() {
     setAddingMember(true);
     const payload = {
       name: memberName.trim(),
-      email: memberEmail.trim(),
+      email: memberEmail.trim().toLowerCase(),
       role: memberRole,
-      orgId: selectedOrg?.id || selectedOrg?._id || 'ORG-101',
+      orgId: selectedOrg?.id || selectedOrg?._id,
     };
 
     try {
@@ -576,109 +747,285 @@ export default function App() {
     }
   };
 
+  const markAllNotificationsRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
+    showToast('All notifications marked as read');
+  };
+
+  const BrandTopBar = ({ rightAction }) => (
+    <View style={styles.topBar}>
+      <View style={styles.brandRow}>
+        <View style={styles.logoBadge}>
+          <Text style={styles.logoText}>CG</Text>
+        </View>
+        <Text style={styles.brandName}>ComplianceGuard</Text>
+      </View>
+      {rightAction || null}
+    </View>
+  );
+
   // =========================================================
-  // LOGIN, SIGN UP & FORGOT PASSWORD (OTP) SCREEN
+  // AUTH: SIGN IN, SIGN UP & RESET PASSWORD (SCREENS 04 & 05)
   // =========================================================
   if (screen === 'auth') {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
-        >
-          <ScrollView
-            ref={authScrollRef}
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
+      <View style={styles.outerFrame}>
+        <SafeAreaView style={styles.mobileFrame}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
           >
-            <View style={styles.topBar}>
-              <View style={styles.brandRow}>
-                <View style={styles.logoBadge}>
-                  <Text style={styles.logoText}>CG</Text>
-                </View>
-                <Text style={styles.brandName}>ComplianceGuard</Text>
-              </View>
-
-              <Pressable
-                onPress={() => {
-                  setScreen('onboarding');
-                  setStepIndex(0);
-                }}
-              >
-                <Text style={styles.skipText}>Back to Intro</Text>
-              </Pressable>
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.badgeText}>ACCOUNT ACCESS • STEP 4</Text>
-              <Text style={styles.sectionTitle}>
-                {authMode === 'login'
-                  ? 'Sign In to Workspace'
-                  : authMode === 'signup'
-                  ? 'Create Account (Sign Up)'
-                  : 'Reset Password with OTP'}
-              </Text>
-              <Text style={styles.subtitle}>
-                {authMode === 'login'
-                  ? 'Enter your registered email and password to continue.'
-                  : authMode === 'signup'
-                  ? 'Register with a valid domain email (e.g. name@company.com).'
-                  : otpSent
-                  ? 'Enter the 6-digit OTP from your email and set a new password.'
-                  : 'Enter your registered email to receive a 6-digit OTP in your mail.'}
-              </Text>
-
-              {authMode !== 'forgot' && (
-                <View style={styles.modeToggleRow}>
+            <ScrollView
+              ref={authScrollRef}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <BrandTopBar
+                rightAction={
                   <Pressable
-                    style={[styles.modeBtn, authMode === 'login' && styles.activeModeBtn]}
+                    style={styles.ghostPill}
                     onPress={() => {
-                      setAuthMode('login');
+                      setScreen('onboarding');
+                      setStepIndex(0);
+                    }}
+                  >
+                    <Text style={styles.skipText}>Intro</Text>
+                  </Pressable>
+                }
+              />
+
+              {authMode === 'login' && (
+                <View style={styles.authBlock}>
+                  <Text style={styles.authTitle}>Welcome Back</Text>
+                  <Text style={styles.authSub}>Your next step toward audit readiness.</Text>
+
+                  {authError ? (
+                    <View style={styles.alertErrorBox}>
+                      <Text style={styles.errorText}>{authError}</Text>
+                    </View>
+                  ) : null}
+                  {authInfo ? (
+                    <View style={styles.alertInfoBox}>
+                      <Text style={styles.infoText}>{authInfo}</Text>
+                    </View>
+                  ) : null}
+
+                  <Text style={styles.fieldLabel}>Email</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    placeholder="you@company.com"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={authEmail}
+                    onChangeText={setAuthEmail}
+                    onFocus={() => scrollAuthUp(80)}
+                  />
+
+                  <Text style={styles.fieldLabel}>Password</Text>
+                  <View style={styles.passwordWrap}>
+                    <TextInput
+                      style={styles.passwordInput}
+                      placeholder="Enter your password"
+                      placeholderTextColor="#94A3B8"
+                      secureTextEntry={!showPassword}
+                      value={authPassword}
+                      onChangeText={setAuthPassword}
+                      onFocus={() => scrollAuthUp(140)}
+                    />
+                    <Pressable onPress={() => setShowPassword((prev) => !prev)}>
+                      <Text style={styles.eyeBtn}>{showPassword ? 'Hide' : '👁'}</Text>
+                    </Pressable>
+                  </View>
+
+                  <Pressable
+                    style={styles.forgotLinkWrap}
+                    onPress={() => {
+                      setAuthMode('forgot');
+                      setOtpSent(false);
+                      setOtpInput('');
                       setAuthError('');
                       setAuthInfo('');
                     }}
                   >
-                    <Text
-                      style={[
-                        styles.modeBtnText,
-                        authMode === 'login' && styles.activeModeBtnText,
-                      ]}
-                    >
-                      Login
-                    </Text>
+                    <Text style={styles.forgotLinkText}>Forgot Password?</Text>
                   </Pressable>
 
                   <Pressable
-                    style={[styles.modeBtn, authMode === 'signup' && styles.activeModeBtn]}
-                    onPress={() => {
-                      setAuthMode('signup');
-                      setAuthError('');
-                      setAuthInfo('');
-                    }}
+                    style={styles.blueBtn}
+                    onPress={handleAuthSubmit}
+                    disabled={authLoading}
                   >
-                    <Text
-                      style={[
-                        styles.modeBtnText,
-                        authMode === 'signup' && styles.activeModeBtnText,
-                      ]}
-                    >
-                      Sign Up
+                    <Text style={styles.blueBtnText}>
+                      {authLoading ? 'Signing In...' : 'Sign In'}
                     </Text>
                   </Pressable>
+
+                  <View style={styles.centerRow}>
+                    <Text style={styles.mutedSmall}>New to ComplianceGuard? </Text>
+                    <Pressable
+                      onPress={() => {
+                        setAuthMode('signup');
+                        setAuthError('');
+                        setAuthInfo('');
+                      }}
+                    >
+                      <Text style={styles.inlineBlueLink}>Sign Up</Text>
+                    </Pressable>
+                  </View>
+
+                  <Text style={styles.orDivider}>or</Text>
+
+                  <Pressable style={styles.googleBtn} onPress={handleQuickDemoFill}>
+                    <Text style={styles.googleLogo}>G</Text>
+                    <Text style={styles.googleBtnText}>Continue with google (Demo Fill)</Text>
+                  </Pressable>
+
+                  <Text style={styles.secureFootnote}>
+                    🔒 Secure access. Peace of mind.
+                  </Text>
                 </View>
               )}
 
-              {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
-              {authInfo ? <Text style={styles.infoText}>{authInfo}</Text> : null}
+              {authMode === 'signup' && (
+                <View style={styles.authBlock}>
+                  <Text style={styles.uppercaseSection}>CREATE YOUR ACCOUNT</Text>
 
-              {authMode === 'forgot' ? (
-                <>
-                  <Text style={styles.formLabel}>Registered Work Email</Text>
+                  {authError ? (
+                    <View style={styles.alertErrorBox}>
+                      <Text style={styles.errorText}>{authError}</Text>
+                    </View>
+                  ) : null}
+
+                  <Text style={styles.fieldLabel}>Username</Text>
                   <TextInput
-                    style={styles.input}
-                    placeholder="name@company.com"
+                    style={styles.fieldInput}
+                    placeholder="Username"
+                    placeholderTextColor="#94A3B8"
+                    value={authName}
+                    onChangeText={setAuthName}
+                  />
+
+                  <Text style={styles.fieldLabel}>Email</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    placeholder="Email"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={authEmail}
+                    onChangeText={setAuthEmail}
+                    onFocus={() => scrollAuthUp(80)}
+                  />
+
+                  <Text style={styles.fieldLabel}>Password</Text>
+                  <View style={styles.passwordWrap}>
+                    <TextInput
+                      style={styles.passwordInput}
+                      placeholder="Enter your password"
+                      placeholderTextColor="#94A3B8"
+                      secureTextEntry={!showPassword}
+                      value={authPassword}
+                      onChangeText={setAuthPassword}
+                      onFocus={() => scrollAuthUp(140)}
+                    />
+                    <Pressable onPress={() => setShowPassword((prev) => !prev)}>
+                      <Text style={styles.eyeBtn}>{showPassword ? 'Hide' : '👁'}</Text>
+                    </Pressable>
+                  </View>
+
+                  <Text style={styles.fieldLabel}>Confirm password</Text>
+                  <View style={styles.passwordWrap}>
+                    <TextInput
+                      style={styles.passwordInput}
+                      placeholder="Confirm password"
+                      placeholderTextColor="#94A3B8"
+                      secureTextEntry={!showPassword}
+                      value={authConfirmPassword}
+                      onChangeText={setAuthConfirmPassword}
+                      onFocus={() => scrollAuthUp(200)}
+                    />
+                    <Pressable onPress={() => setShowPassword((prev) => !prev)}>
+                      <Text style={styles.eyeBtn}>{showPassword ? 'Hide' : '👁'}</Text>
+                    </Pressable>
+                  </View>
+
+                  <Pressable
+                    style={styles.termsRow}
+                    onPress={() => setAgreeTerms((prev) => !prev)}
+                  >
+                    <View style={[styles.checkbox, agreeTerms && styles.checkboxChecked]}>
+                      {agreeTerms ? <Text style={styles.checkmark}>✓</Text> : null}
+                    </View>
+                    <Text style={styles.termsText}>
+                      I agree to the{' '}
+                      <Text style={styles.inlineBlueLink}>terms & conditions</Text> and{' '}
+                      <Text style={styles.inlineBlueLink}>Privacy policy</Text>
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.blueBtn}
+                    onPress={handleAuthSubmit}
+                    disabled={authLoading}
+                  >
+                    <Text style={styles.blueBtnText}>
+                      {authLoading ? 'Creating Account...' : 'Sign Up'}
+                    </Text>
+                  </Pressable>
+
+                  <View style={styles.centerRow}>
+                    <Text style={styles.mutedSmall}>Already have an account? </Text>
+                    <Pressable
+                      onPress={() => {
+                        setAuthMode('login');
+                        setAuthError('');
+                      }}
+                    >
+                      <Text style={styles.inlineBlueLink}>Sign In</Text>
+                    </Pressable>
+                  </View>
+
+                  <Text style={styles.orDivider}>or</Text>
+
+                  <Pressable style={styles.googleBtn} onPress={handleQuickDemoFill}>
+                    <Text style={styles.googleLogo}>G</Text>
+                    <Text style={styles.googleBtnText}>Continue with google</Text>
+                  </Pressable>
+
+                  <Text style={styles.secureFootnote}>
+                    🔒 Secure access. Peace of mind.
+                  </Text>
+                </View>
+              )}
+
+              {authMode === 'forgot' && (
+                <View style={styles.authBlock}>
+                  <View style={styles.lockIconBox}>
+                    <Text style={styles.lockIconGlyph}>🔒</Text>
+                  </View>
+                  <Text style={styles.authTitle}>Reset Password</Text>
+                  <Text style={styles.authSub}>
+                    Enter your work email and we&apos;ll send you a link to securely reset your password.
+                  </Text>
+
+                  {authError ? (
+                    <View style={styles.alertErrorBox}>
+                      <Text style={styles.errorText}>{authError}</Text>
+                    </View>
+                  ) : null}
+                  {authInfo ? (
+                    <View style={styles.alertInfoBox}>
+                      <Text style={styles.infoText}>{authInfo}</Text>
+                    </View>
+                  ) : null}
+
+                  <Text style={styles.fieldLabel}>Email</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    placeholder="you@company.com"
                     placeholderTextColor="#94A3B8"
                     keyboardType="email-address"
                     autoCapitalize="none"
@@ -689,61 +1036,51 @@ export default function App() {
 
                   {!otpSent ? (
                     <Pressable
-                      style={[styles.primaryBtn, { marginTop: 14 }]}
+                      style={styles.blueBtn}
                       onPress={handleSendResetOtp}
                       disabled={authLoading}
                     >
-                      <Text style={styles.primaryBtnText}>
-                        {authLoading ? 'Sending OTP...' : 'Send OTP to Email →'}
+                      <Text style={styles.blueBtnText}>
+                        {authLoading ? 'Sending...' : 'Send Reset Link'}
                       </Text>
                     </Pressable>
                   ) : (
                     <>
-                      <Text style={styles.formLabel}>Enter 6-Digit OTP (From Email)</Text>
+                      <Text style={styles.fieldLabel}>6-Digit Verification OTP</Text>
                       <TextInput
-                        style={styles.input}
-                        placeholder="Enter 6-digit OTP"
+                        style={styles.fieldInput}
+                        placeholder="000000"
                         placeholderTextColor="#94A3B8"
                         keyboardType="number-pad"
                         maxLength={6}
                         value={otpInput}
                         onChangeText={setOtpInput}
-                        onFocus={() => scrollAuthUp(140)}
                       />
 
-                      <Text style={styles.formLabel}>New Password</Text>
+                      <Text style={styles.fieldLabel}>New Password</Text>
                       <TextInput
-                        style={[styles.input, { marginBottom: 14 }]}
-                        placeholder="Enter new password (min 4 chars)"
+                        style={styles.fieldInput}
+                        placeholder="Enter new password"
                         placeholderTextColor="#94A3B8"
                         secureTextEntry
                         value={resetNewPassword}
                         onChangeText={setResetNewPassword}
-                        onFocus={() => scrollAuthUp(220)}
                       />
 
                       <Pressable
-                        style={styles.primaryBtn}
+                        style={styles.blueBtn}
                         onPress={handleVerifyOtpAndReset}
                         disabled={authLoading}
                       >
-                        <Text style={styles.primaryBtnText}>
-                          {authLoading ? 'Verifying...' : 'Verify OTP & Save Password'}
+                        <Text style={styles.blueBtnText}>
+                          {authLoading ? 'Updating...' : 'Verify OTP & Reset Password'}
                         </Text>
-                      </Pressable>
-
-                      <Pressable
-                        style={styles.demoFillBtn}
-                        onPress={handleSendResetOtp}
-                        disabled={authLoading}
-                      >
-                        <Text style={styles.demoFillText}>Resend OTP</Text>
                       </Pressable>
                     </>
                   )}
 
                   <Pressable
-                    style={styles.demoFillBtn}
+                    style={styles.backToLoginBtn}
                     onPress={() => {
                       setAuthMode('login');
                       setOtpSent(false);
@@ -752,111 +1089,158 @@ export default function App() {
                       setAuthInfo('');
                     }}
                   >
-                    <Text style={styles.demoFillText}>← Back to Sign In</Text>
+                    <Text style={styles.backToLoginText}>← Back to Login</Text>
                   </Pressable>
-                </>
-              ) : (
-                <>
-                  {authMode === 'signup' && (
-                    <>
-                      <Text style={styles.formLabel}>Full Name</Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="e.g. Ganesh Kumar"
-                        placeholderTextColor="#94A3B8"
-                        value={authName}
-                        onChangeText={setAuthName}
-                        onFocus={() => scrollAuthUp(60)}
-                      />
-                    </>
-                  )}
 
-                  <Text style={styles.formLabel}>Work Email</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="name@company.com"
-                    placeholderTextColor="#94A3B8"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    value={authEmail}
-                    onChangeText={setAuthEmail}
-                    onFocus={() => scrollAuthUp(120)}
-                  />
-
-                  <Text style={styles.formLabel}>Password</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter password (min 4 chars)"
-                    placeholderTextColor="#94A3B8"
-                    secureTextEntry
-                    value={authPassword}
-                    onChangeText={setAuthPassword}
-                    onFocus={() => scrollAuthUp(210)}
-                  />
-
-                  {authMode === 'login' && (
-                    <Pressable
-                      style={styles.forgotLinkWrap}
-                      onPress={() => {
-                        setAuthMode('forgot');
-                        setOtpSent(false);
-                        setOtpInput('');
-                        setAuthError('');
-                        setAuthInfo('');
-                      }}
-                    >
-                      <Text style={styles.forgotLinkText}>Forgot password? Reset via OTP</Text>
-                    </Pressable>
-                  )}
-
-                  <Text style={styles.formLabel}>Select Access Role</Text>
-                  <View style={styles.chipsWrap}>
-                    {ROLES.map((r) => (
-                      <Pressable
-                        key={r}
-                        style={[styles.chip, authRole === r && styles.activeChip]}
-                        onPress={() => setAuthRole(r)}
-                      >
-                        <Text
-                          style={[
-                            styles.chipText,
-                            authRole === r && styles.activeChipText,
-                          ]}
-                        >
-                          {r}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-
-                  <Pressable
-                    style={styles.primaryBtn}
-                    onPress={handleAuthSubmit}
-                    disabled={authLoading}
-                  >
-                    <Text style={styles.primaryBtnText}>
-                      {authLoading
-                        ? 'Please wait...'
-                        : authMode === 'login'
-                        ? 'Sign In →'
-                        : 'Create Account & Continue →'}
+                  <View style={styles.infoHintCard}>
+                    <Text style={styles.infoHintTitle}>✉ Can&apos;t find the email?</Text>
+                    <Text style={styles.infoHintDesc}>
+                      Check your spam folder or try again.
                     </Text>
-                  </Pressable>
-
-                  <Pressable style={styles.demoFillBtn} onPress={handleQuickDemoFill}>
-                    <Text style={styles.demoFillText}>Quick Fill Demo Credentials</Text>
-                  </Pressable>
-                </>
+                  </View>
+                </View>
               )}
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </View>
     );
   }
 
   // =========================================================
-  // DASHBOARD + CONTROLS + PROFILE + SETTINGS TABS
+  // CREATE YOUR COMPANY SCREEN (SCREEN 15)
+  // =========================================================
+  if (screen === 'create_company') {
+    return (
+      <View style={styles.outerFrame}>
+        <SafeAreaView style={styles.mobileFrame}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+              <View style={styles.subHeaderRow}>
+                <Pressable onPress={() => setScreen('workspace')}>
+                  <Text style={styles.backChevron}>‹</Text>
+                </Pressable>
+                <View>
+                  <Text style={styles.subHeaderTitle}>Create Your Company</Text>
+                  <Text style={styles.subHeaderSub}>Set up a fresh compliance workspace.</Text>
+                </View>
+              </View>
+
+              {apiError ? (
+                <View style={styles.alertErrorBox}>
+                  <Text style={styles.errorText}>{apiError}</Text>
+                </View>
+              ) : null}
+
+              <Text style={styles.fieldLabel}>Company Name</Text>
+              <TextInput
+                style={styles.fieldInput}
+                placeholder="Enter your company name"
+                placeholderTextColor="#94A3B8"
+                value={orgName}
+                onChangeText={setOrgName}
+              />
+
+              <Text style={styles.fieldLabel}>Contact Email</Text>
+              <TextInput
+                style={styles.fieldInput}
+                placeholder="security@company.com"
+                placeholderTextColor="#94A3B8"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={contactEmail}
+                onChangeText={setContactEmail}
+              />
+
+              <Text style={styles.fieldLabel}>Industry</Text>
+              <View style={styles.chipsWrap}>
+                {INDUSTRIES.map((ind) => (
+                  <Pressable
+                    key={ind}
+                    style={[styles.chip, industry === ind && styles.activeChip]}
+                    onPress={() => setIndustry(ind)}
+                  >
+                    <Text style={[styles.chipText, industry === ind && styles.activeChipText]}>
+                      {ind}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={styles.fieldLabel}>Company Size</Text>
+              <View style={styles.chipsWrap}>
+                {COMPANY_SIZES.map((sz) => (
+                  <Pressable
+                    key={sz}
+                    style={[styles.chip, companySize === sz && styles.activeChip]}
+                    onPress={() => setCompanySize(sz)}
+                  >
+                    <Text style={[styles.chipText, companySize === sz && styles.activeChipText]}>
+                      {sz}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={styles.fieldLabel}>Compliance Framework</Text>
+              <View style={styles.fwRow}>
+                {FRAMEWORKS.map((fw) => {
+                  const active = framework === fw;
+                  return (
+                    <Pressable
+                      key={fw}
+                      style={[styles.fwBox, active && styles.fwBoxActive]}
+                      onPress={() => setFramework(fw)}
+                    >
+                      <View style={[styles.sqCheck, active && styles.sqCheckActive]}>
+                        {active ? <Text style={styles.checkmark}>✓</Text> : null}
+                      </View>
+                      <Text style={[styles.fwBoxText, active && styles.fwBoxTextActive]}>
+                        {fw}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.fieldLabel}>Cloud Provider</Text>
+              <View style={styles.chipsWrap}>
+                {CLOUD_PROVIDERS.map((env) => (
+                  <Pressable
+                    key={env}
+                    style={[styles.chip, cloudEnv === env && styles.activeChip]}
+                    onPress={() => setCloudEnv(env)}
+                  >
+                    <Text style={[styles.chipText, cloudEnv === env && styles.activeChipText]}>
+                      {env}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.mutedSmall}>AWS, Azure, Google Cloud or Other</Text>
+
+              <Pressable
+                style={styles.blueBtn}
+                onPress={handleCreateOrganization}
+                disabled={creatingOrg}
+              >
+                <Text style={styles.blueBtnText}>
+                  {creatingOrg ? 'Creating Company...' : 'Create Company'}
+                </Text>
+              </Pressable>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // =========================================================
+  // MAIN APP: HOME, CONTROLS, PROFILE, SETTINGS & SUB-SCREENS
   // =========================================================
   if (screen === 'dashboard') {
     const totalCount = controls.length;
@@ -875,751 +1259,1106 @@ export default function App() {
         !q ||
         displayCode.toLowerCase().includes(q) ||
         displayTitle.toLowerCase().includes(q) ||
-        (c.framework || '').toLowerCase().includes(q) ||
-        (c.updatedBy || '').toLowerCase().includes(q);
+        (c.framework || '').toLowerCase().includes(q);
       return matchesStatus && matchesQuery;
     });
 
-    return (
-      <SafeAreaView style={styles.dashboardShell}>
-        <StatusBar barStyle="dark-content" />
-
-        <View style={styles.dashHeader}>
-          <View>
-            <Text style={styles.dashOrgName} numberOfLines={1}>
-              {selectedOrg?.name || 'ComplianceGuard'}
-            </Text>
-            <Text style={styles.dashSubMeta}>
-              {activeRole} • {currentUser?.email || 'Member'}
-            </Text>
-          </View>
-
-          <Pressable style={styles.switchPill} onPress={goToWorkspaceScreen}>
-            <Text style={styles.switchPillText}>Workspaces</Text>
-          </Pressable>
-        </View>
-
-        {statusBanner ? (
-          <View style={styles.toastBox}>
-            <Text style={styles.toastText}>{statusBanner}</Text>
-          </View>
-        ) : null}
-
-        {activeTab === 'dashboard' && (
-          <ScrollView contentContainerStyle={styles.dashScroll}>
-            <View style={styles.summaryCard}>
-              <View style={styles.summaryTop}>
-                <Text style={styles.summaryLabel}>COMPLIANCE READINESS DASHBOARD</Text>
-                <Text style={styles.summaryPercent}>{readinessScore}%</Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${readinessScore}%` }]} />
-              </View>
-              <Text style={styles.helperText}>
-                Framework: {selectedOrg?.framework || 'SOC 2 Type II'} • Cloud:{' '}
-                {selectedOrg?.cloud || selectedOrg?.cloudEnvironment || 'AWS'}
-              </Text>
-            </View>
-
-            <View style={styles.reportGrid}>
-              <View style={styles.reportBox}>
-                <Text style={styles.reportNum}>{totalCount}</Text>
-                <Text style={styles.reportLabel}>Total Controls</Text>
-              </View>
-              <View style={styles.reportBox}>
-                <Text style={[styles.reportNum, { color: '#15803D' }]}>
-                  {compliantCount}
-                </Text>
-                <Text style={styles.reportLabel}>Compliant</Text>
-              </View>
-              <View style={styles.reportBox}>
-                <Text style={[styles.reportNum, { color: '#B45309' }]}>
-                  {inProgressCount}
-                </Text>
-                <Text style={styles.reportLabel}>In Progress</Text>
-              </View>
-              <View style={styles.reportBox}>
-                <Text style={[styles.reportNum, { color: '#B91C1C' }]}>
-                  {nonCompliantCount}
-                </Text>
-                <Text style={styles.reportLabel}>Non-Compliant</Text>
-              </View>
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.badgeText}>QUICK ACTIONS</Text>
-              <Text style={styles.sectionTitleSmall}>Manage Compliance & Evidence</Text>
-              <View style={styles.buttonRow}>
-                <Pressable
-                  style={styles.primaryBtn}
-                  onPress={() => setActiveTab('controls')}
-                >
-                  <Text style={styles.primaryBtnText}>Open Controls →</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.secondaryBtn}
-                  onPress={() => loadDashboardData(selectedOrg, true)}
-                  disabled={syncingData}
-                >
-                  <Text style={styles.secondaryBtnText}>
-                    {syncingData ? 'Syncing...' : 'Sync Data'}
-                  </Text>
-                </Pressable>
-              </View>
-              <Text style={styles.helperText}>
-                Sync Data refreshes controls & team records directly from MongoDB.
-              </Text>
-            </View>
-          </ScrollView>
-        )}
-
-        {activeTab === 'controls' && (
-          <ScrollView contentContainerStyle={styles.dashScroll} keyboardShouldPersistTaps="handled">
-            <View style={styles.searchActionRow}>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search ID, title, framework..."
-                placeholderTextColor="#94A3B8"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-              {!isAuditor && (
-                <Pressable
-                  style={styles.addBtn}
-                  onPress={() => setShowAddControl((prev) => !prev)}
-                >
-                  <Text style={styles.addBtnText}>
-                    {showAddControl ? 'Close' : '+ Control'}
-                  </Text>
-                </Pressable>
-              )}
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filterRow}
-            >
-              {['All', ...STATUS_OPTIONS].map((st) => (
-                <Pressable
-                  key={st}
-                  style={[
-                    styles.filterPill,
-                    statusFilter === st && styles.activeFilterPill,
-                  ]}
-                  onPress={() => setStatusFilter(st)}
-                >
-                  <Text
-                    style={[
-                      styles.filterPillText,
-                      statusFilter === st && styles.activeFilterPillText,
-                    ]}
-                  >
-                    {st}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-
-            {showAddControl && !isAuditor && (
-              <View style={styles.formBox}>
-                <Text style={styles.sectionTitleSmall}>New Compliance Control</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Control ID (e.g. CC6.1 or A.9.2)"
-                  placeholderTextColor="#94A3B8"
-                  value={newCode}
-                  onChangeText={setNewCode}
-                />
-                <TextInput
-                  style={[styles.input, { marginTop: 8 }]}
-                  placeholder="Control Title (e.g. Enforce MFA for Admins)"
-                  placeholderTextColor="#94A3B8"
-                  value={newTitle}
-                  onChangeText={setNewTitle}
-                />
-                <TextInput
-                  style={[styles.input, { marginTop: 8 }]}
-                  placeholder="Category (e.g. Access Control)"
-                  placeholderTextColor="#94A3B8"
-                  value={newCategory}
-                  onChangeText={setNewCategory}
-                />
-                <TextInput
-                  style={[styles.input, { marginTop: 8, marginBottom: 10 }]}
-                  placeholder="Owner (e.g. Security Lead)"
-                  placeholderTextColor="#94A3B8"
-                  value={newOwner}
-                  onChangeText={setNewOwner}
-                />
-                <Pressable
-                  style={styles.primaryBtn}
-                  onPress={handleAddControl}
-                  disabled={savingControl}
-                >
-                  <Text style={styles.primaryBtnText}>
-                    {savingControl ? 'Saving...' : 'Save Control'}
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-
-            {loadingControls ? (
-              <View style={styles.loaderBox}>
-                <ActivityIndicator size="small" color="#1D4ED8" />
-                <Text style={styles.helperText}>Loading controls...</Text>
-              </View>
-            ) : filteredControls.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Text style={styles.helperText}>
-                  No controls match this filter. Tap "+ Control" to add one.
-                </Text>
-              </View>
-            ) : (
-              filteredControls.map((ctrl, idx) => {
-                const id = ctrl._id || ctrl.id || idx;
-                const isEditingNote = editingNoteId === id;
-                const isConfirmingDel = confirmDeleteId === id;
-                const proofText = ctrl.evidence || ctrl.evidenceNote || '';
-
-                return (
-                  <View key={id} style={styles.controlCard}>
-                    <View style={styles.controlTopRow}>
-                      <View style={styles.codeBadge}>
-                        <Text style={styles.codeBadgeText}>
-                          {ctrl.code || ctrl.id || `C-${idx + 1}`}
-                        </Text>
-                      </View>
-                      <Text style={styles.categoryTag}>
-                        {ctrl.framework || 'SOC 2'} • {ctrl.updatedBy || 'Admin'}
-                      </Text>
-                    </View>
-
-                    <Text style={styles.controlTitle}>{ctrl.title || ctrl.name}</Text>
-
-                    <View style={styles.statusRow}>
-                      {STATUS_OPTIONS.map((st) => {
-                        const active = ctrl.status === st;
-                        return (
-                          <Pressable
-                            key={st}
-                            style={[
-                              styles.statusChip,
-                              active &&
-                                (st === 'Compliant'
-                                  ? styles.statusCompliant
-                                  : st === 'In Progress'
-                                  ? styles.statusProgress
-                                  : styles.statusNonCompliant),
-                            ]}
-                            onPress={() => handleUpdateControl(ctrl, { status: st })}
-                          >
-                            <Text
-                              style={[
-                                styles.statusChipText,
-                                active && styles.statusChipTextActive,
-                              ]}
-                            >
-                              {st}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-
-                    {isEditingNote ? (
-                      <View style={styles.noteEditBox}>
-                        <TextInput
-                          style={styles.input}
-                          placeholder="Add audit evidence link or proof note..."
-                          placeholderTextColor="#94A3B8"
-                          value={noteDraft}
-                          onChangeText={setNoteDraft}
-                        />
-                        <View style={styles.noteBtnRow}>
-                          <Pressable
-                            style={styles.smallPrimaryBtn}
-                            onPress={() => {
-                              handleUpdateControl(ctrl, {
-                                evidence: noteDraft,
-                                evidenceNote: noteDraft,
-                              });
-                              setEditingNoteId(null);
-                            }}
-                          >
-                            <Text style={styles.smallPrimaryBtnText}>Save Proof</Text>
-                          </Pressable>
-                          <Pressable
-                            style={styles.smallSecondaryBtn}
-                            onPress={() => setEditingNoteId(null)}
-                          >
-                            <Text style={styles.smallSecondaryBtnText}>Cancel</Text>
-                          </Pressable>
-                        </View>
-                      </View>
-                    ) : (
-                      <View style={styles.evidenceRow}>
-                        <Text style={styles.evidenceText} numberOfLines={2}>
-                          Evidence: {proofText || 'No proof note added yet'}
-                        </Text>
-                        {!isAuditor && (
-                          <Pressable
-                            onPress={() => {
-                              setEditingNoteId(id);
-                              setNoteDraft(proofText);
-                            }}
-                          >
-                            <Text style={styles.linkAction}>
-                              {proofText ? 'Edit' : '+ Proof'}
-                            </Text>
-                          </Pressable>
-                        )}
-                      </View>
-                    )}
-
-                    {isSuperAdmin && (
-                      <View style={styles.deleteBar}>
-                        {isConfirmingDel ? (
-                          <View style={styles.confirmDelRow}>
-                            <Text style={styles.confirmDelLabel}>Delete control?</Text>
-                            <Pressable onPress={() => handleDeleteControl(id)}>
-                              <Text style={styles.dangerLink}>Yes, Delete</Text>
-                            </Pressable>
-                            <Pressable onPress={() => setConfirmDeleteId(null)}>
-                              <Text style={styles.mutedLink}>Cancel</Text>
-                            </Pressable>
-                          </View>
-                        ) : (
-                          <Pressable onPress={() => setConfirmDeleteId(id)}>
-                            <Text style={styles.dangerLink}>Delete Control</Text>
-                          </Pressable>
-                        )}
-                      </View>
-                    )}
-                  </View>
-                );
-              })
-            )}
-          </ScrollView>
-        )}
-
-        {activeTab === 'profile' && (
-          <ScrollView contentContainerStyle={styles.dashScroll} keyboardShouldPersistTaps="handled">
-            <View style={styles.card}>
-              <Text style={styles.badgeText}>USER PROFILE</Text>
-              <Text style={styles.sectionTitle}>
-                {currentUser?.name || 'Compliance User'}
-              </Text>
-              <Text style={styles.subtitle}>
-                Email: {currentUser?.email || 'user@complianceguard.app'}
-              </Text>
-              <Text style={styles.helperText}>
-                Active Role: {activeRole} • Session: {currentUser?.authMethod || 'Active'}
-              </Text>
-              <Text style={styles.helperText}>
-                Current Organization: {selectedOrg?.name || 'None'}
-              </Text>
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.badgeText}>WORKSPACE TEAM</Text>
-              <Text style={styles.sectionTitleSmall}>Members & Access</Text>
-
-              {isSuperAdmin && (
-                <View style={[styles.formBox, { marginTop: 10 }]}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Member Full Name"
-                    placeholderTextColor="#94A3B8"
-                    value={memberName}
-                    onChangeText={setMemberName}
-                  />
-                  <TextInput
-                    style={[styles.input, { marginTop: 8 }]}
-                    placeholder="Member Email (name@domain.com)"
-                    placeholderTextColor="#94A3B8"
-                    autoCapitalize="none"
-                    value={memberEmail}
-                    onChangeText={setMemberEmail}
-                  />
-                  <View style={[styles.chipsWrap, { marginTop: 10 }]}>
-                    {ROLES.map((r) => (
-                      <Pressable
-                        key={r}
-                        style={[styles.chip, memberRole === r && styles.activeChip]}
-                        onPress={() => setMemberRole(r)}
-                      >
-                        <Text
-                          style={[
-                            styles.chipText,
-                            memberRole === r && styles.activeChipText,
-                          ]}
-                        >
-                          {r}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Pressable
-                    style={styles.primaryBtn}
-                    onPress={handleAddMember}
-                    disabled={addingMember}
-                  >
-                    <Text style={styles.primaryBtnText}>
-                      {addingMember ? 'Adding...' : '+ Add Team Member'}
-                    </Text>
-                  </Pressable>
-                </View>
-              )}
-
-              {loadingMembers ? (
-                <ActivityIndicator size="small" color="#1D4ED8" />
-              ) : members.length === 0 ? (
-                <Text style={styles.helperText}>
-                  No additional members listed yet.
-                </Text>
-              ) : (
-                <View style={styles.listGap}>
-                  {members.map((m, idx) => (
-                    <View key={m._id || m.id || idx} style={styles.memberRow}>
-                      <View>
-                        <Text style={styles.memberName}>{m.name}</Text>
-                        <Text style={styles.memberEmail}>{m.email}</Text>
-                      </View>
-                      <View style={styles.codeBadge}>
-                        <Text style={styles.codeBadgeText}>{m.role}</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          </ScrollView>
-        )}
-
-        {activeTab === 'settings' && (
-          <ScrollView contentContainerStyle={styles.dashScroll}>
-            <View style={styles.card}>
-              <Text style={styles.badgeText}>APP SETTINGS</Text>
-              <Text style={styles.sectionTitle}>Role & Workspace Preferences</Text>
-
-              <Text style={styles.formLabel}>Switch Active Permission Role</Text>
-              <View style={styles.chipsWrap}>
-                {ROLES.map((r) => (
-                  <Pressable
-                    key={r}
-                    style={[styles.chip, activeRole === r && styles.activeChip]}
-                    onPress={() => {
-                      setActiveRole(r);
-                      showToast(`Role switched to ${r}`);
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        activeRole === r && styles.activeChipText,
-                      ]}
-                    >
-                      {r}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <Text style={styles.helperText}>Backend API: {API_BASE}</Text>
-
-              <View style={styles.buttonRow}>
-                <Pressable style={styles.secondaryBtn} onPress={goToWorkspaceScreen}>
-                  <Text style={styles.secondaryBtnText}>Change Workspace</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.secondaryBtn}
-                  onPress={() => {
-                    setStepIndex(0);
-                    setScreen('onboarding');
-                  }}
-                >
-                  <Text style={styles.secondaryBtnText}>Replay Onboarding</Text>
-                </Pressable>
-              </View>
-
-              <Pressable style={styles.signOutBtn} onPress={handleSignOut}>
-                <Text style={styles.signOutText}>Sign Out</Text>
-              </Pressable>
-            </View>
-          </ScrollView>
-        )}
-
-        <View style={styles.bottomNav}>
-          {[
-            { id: 'dashboard', label: 'Dashboard' },
-            { id: 'controls', label: `Controls (${totalCount})` },
-            { id: 'profile', label: 'Profile' },
-            { id: 'settings', label: 'Settings' },
-          ].map((tab) => (
-            <Pressable
-              key={tab.id}
-              style={[styles.navItem, activeTab === tab.id && styles.navItemActive]}
-              onPress={() => setActiveTab(tab.id)}
-            >
-              <Text
-                style={[
-                  styles.navText,
-                  activeTab === tab.id && styles.navTextActive,
-                ]}
-                numberOfLines={1}
-              >
-                {tab.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </SafeAreaView>
+    const filteredNotifs = notifications.filter(
+      (n) => notifFilter === 'All' || n.type === notifFilter
     );
-  }
+    const todayNotifs = filteredNotifs.filter((n) => n.section === 'TODAY');
+    const yesterdayNotifs = filteredNotifs.filter((n) => n.section === 'YESTERDAY');
 
-  // =========================================================
-  // SCREEN 2: WORKSPACE SELECTOR & ONBOARDING
-  // =========================================================
-  if (screen === 'workspace') {
+    const profileDisplayName =
+      currentUser?.name ||
+      (currentUser?.email ? currentUser.email.split('@')[0] : 'sathya');
+    const profileDisplayEmail =
+      currentUser?.email || 'sathya123@gmail.com';
+    const companyDisplayName = selectedOrg?.name || 'Acme Inc.';
+
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" />
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <View style={styles.topBar}>
-            <View style={styles.brandRow}>
-              <View style={styles.logoBadge}>
-                <Text style={styles.logoText}>CG</Text>
-              </View>
-              <Text style={styles.brandName}>ComplianceGuard</Text>
+      <View style={styles.outerFrame}>
+        <SafeAreaView style={styles.mobileFrame}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+          {statusBanner ? (
+            <View style={styles.toastBox}>
+              <Text style={styles.toastText}>{statusBanner}</Text>
             </View>
+          ) : null}
 
-            <Pressable onPress={goToAuthScreen}>
-              <Text style={styles.skipText}>Account</Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.card}>
-            <Text style={styles.badgeText}>STEP 2 • WORKSPACE & BACKEND SYNC</Text>
-            <Text style={styles.sectionTitle}>Select or Create Organization</Text>
-            <Text style={styles.subtitle}>
-              Signed in as {currentUser?.email || 'Guest'} ({activeRole}).
-            </Text>
-
-            <View style={styles.actionBar}>
-              <Pressable
-                style={styles.smallPrimaryBtn}
-                onPress={() => setShowCreateForm((prev) => !prev)}
-              >
-                <Text style={styles.smallPrimaryBtnText}>
-                  {showCreateForm ? 'Close Form' : '+ New Workspace'}
-                </Text>
-              </Pressable>
-
-              <Pressable style={styles.smallSecondaryBtn} onPress={loadOrganizations}>
-                <Text style={styles.smallSecondaryBtnText}>Refresh</Text>
-              </Pressable>
-            </View>
-
-            {apiError ? <Text style={styles.errorText}>{apiError}</Text> : null}
-
-            {showCreateForm && (
-              <View style={styles.formBox}>
-                <Text style={styles.formLabel}>Organization Name</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. Acme Cloud Inc"
-                  placeholderTextColor="#94A3B8"
-                  value={orgName}
-                  onChangeText={setOrgName}
-                />
-
-                <Text style={styles.formLabel}>Primary Contact Email</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="security@acmecloud.com"
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  value={contactEmail}
-                  onChangeText={setContactEmail}
-                />
-
-                <Text style={styles.formLabel}>Target Framework</Text>
-                <View style={styles.chipsWrap}>
-                  {['SOC 2 Type II', 'ISO 27001', 'Both (SOC 2 & ISO)'].map((fw) => (
-                    <Pressable
-                      key={fw}
-                      style={[styles.chip, framework === fw && styles.activeChip]}
-                      onPress={() => setFramework(fw)}
-                    >
-                      <Text style={[styles.chipText, framework === fw && styles.activeChipText]}>
-                        {fw}
-                      </Text>
-                    </Pressable>
-                  ))}
+          {/* SUB-SCREEN: NOTIFICATIONS (SCREEN 12) */}
+          {subScreen === 'notifications' && (
+            <ScrollView contentContainerStyle={styles.dashScroll}>
+              <View style={styles.notifTopHeader}>
+                <View style={styles.subHeaderRow}>
+                  <Pressable onPress={() => setSubScreen(null)}>
+                    <Text style={styles.backChevron}>‹</Text>
+                  </Pressable>
+                  <View>
+                    <Text style={styles.subHeaderTitle}>Notifications</Text>
+                    <Text style={styles.notifSubCount}>
+                      {unreadCount} unread notifications
+                    </Text>
+                  </View>
                 </View>
-
-                <Text style={styles.formLabel}>Cloud Environment</Text>
-                <View style={styles.chipsWrap}>
-                  {['AWS', 'GCP', 'Azure', 'Hybrid'].map((env) => (
-                    <Pressable
-                      key={env}
-                      style={[styles.chip, cloudEnv === env && styles.activeChip]}
-                      onPress={() => setCloudEnv(env)}
-                    >
-                      <Text style={[styles.chipText, cloudEnv === env && styles.activeChipText]}>
-                        {env}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-                <Pressable
-                  style={styles.primaryBtn}
-                  onPress={handleCreateOrganization}
-                  disabled={creatingOrg}
-                >
-                  <Text style={styles.primaryBtnText}>
-                    {creatingOrg ? 'Creating...' : 'Create & Continue →'}
-                  </Text>
+                <Pressable onPress={markAllNotificationsRead}>
+                  <Text style={styles.markAllLink}>Mark all as read</Text>
                 </Pressable>
               </View>
-            )}
 
-            {loadingOrgs ? (
-              <View style={styles.loaderBox}>
-                <ActivityIndicator size="small" color="#1D4ED8" />
-                <Text style={styles.helperText}>Loading organizations...</Text>
-              </View>
-            ) : orgs.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Text style={styles.helperText}>
-                  No workspaces found yet. Tap "+ New Workspace" above to onboard one.
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.listGap}>
-                {orgs.map((item, idx) => {
-                  const id = item._id || item.id || idx;
+              <View style={styles.notifFilterRow}>
+                {['All', 'Updates', 'Alerts'].map((f) => {
+                  const active = notifFilter === f;
                   return (
                     <Pressable
-                      key={id}
-                      style={styles.orgCard}
-                      onPress={() => openWorkspaceDashboard(item)}
+                      key={f}
+                      style={[styles.notifChip, active && styles.notifChipActive]}
+                      onPress={() => setNotifFilter(f)}
                     >
-                      <Text style={styles.orgName}>{item.name || 'Untitled Workspace'}</Text>
-                      <Text style={styles.orgMeta}>
-                        {item.framework || 'Compliance'} • {item.cloud || item.cloudEnvironment || 'Cloud'}
+                      <Text style={[styles.notifChipText, active && styles.notifChipTextActive]}>
+                        {f}
                       </Text>
-                      <Text style={styles.tapHint}>Tap to open workspace →</Text>
                     </Pressable>
                   );
                 })}
               </View>
-            )}
+
+              {todayNotifs.length > 0 && (
+                <>
+                  <Text style={styles.sectionCaps}>TODAY</Text>
+                  {todayNotifs.map((item) => (
+                    <View
+                      key={item.id}
+                      style={[styles.notifCard, item.unread && styles.notifCardUnread]}
+                    >
+                      <Text style={styles.notifGlyph}>{item.icon}</Text>
+                      <View style={{ flex: 1 }}>
+                        <View style={styles.notifTitleRow}>
+                          <Text style={styles.notifTitle}>{item.title}</Text>
+                          {item.unread ? <View style={styles.unreadDot} /> : null}
+                        </View>
+                        <Text style={styles.notifBody}>{item.body}</Text>
+                        <Text style={styles.notifTime}>{item.time}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </>
+              )}
+
+              {yesterdayNotifs.length > 0 && (
+                <>
+                  <Text style={styles.sectionCaps}>YESTERDAY</Text>
+                  {yesterdayNotifs.map((item) => (
+                    <View key={item.id} style={styles.notifCard}>
+                      <Text style={styles.notifGlyph}>{item.icon}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.notifTitle}>{item.title}</Text>
+                        <Text style={styles.notifBody}>{item.body}</Text>
+                        <Text style={styles.notifTime}>{item.time}</Text>
+                      </View>
+                    </View>
+                  ))}
+                </>
+              )}
+            </ScrollView>
+          )}
+
+          {/* SUB-SCREEN: HELP & SUPPORT (SCREEN 13) */}
+          {subScreen === 'support' && (
+            <ScrollView contentContainerStyle={styles.dashScroll}>
+              <View style={styles.subHeaderRow}>
+                <Pressable onPress={() => setSubScreen(null)}>
+                  <Text style={styles.backChevron}>‹</Text>
+                </Pressable>
+                <Text style={styles.subHeaderTitle}>Help & Support</Text>
+              </View>
+
+              <View style={styles.supportHeroBox}>
+                <View style={styles.supportCircle}>
+                  <Text style={styles.supportHeadset}>🎧 ✓</Text>
+                </View>
+                <Text style={styles.supportTitle}>How can we help?</Text>
+                <Text style={styles.supportSub}>
+                  A little guidance, whenever you need it.
+                </Text>
+              </View>
+
+              <Text style={styles.faqHeading}>Frequently Asked Questions</Text>
+              {FAQ_ITEMS.map((item) => {
+                const isOpen = openFaqId === item.id;
+                return (
+                  <View key={item.id} style={styles.faqCard}>
+                    <Pressable
+                      style={styles.faqQuestionRow}
+                      onPress={() => setOpenFaqId(isOpen ? null : item.id)}
+                    >
+                      <Text style={styles.faqQuestion}>{item.q}</Text>
+                      <Text style={styles.faqChevron}>{isOpen ? '⌃' : '⌄'}</Text>
+                    </Pressable>
+                    {isOpen ? <Text style={styles.faqAnswer}>{item.a}</Text> : null}
+                  </View>
+                );
+              })}
+
+              <TextInput
+                style={[styles.fieldInput, { marginTop: 10 }]}
+                placeholder="Write a message to support (optional)"
+                placeholderTextColor="#94A3B8"
+                value={supportMessage}
+                onChangeText={setSupportMessage}
+              />
+
+              <Text style={styles.supportReplyNote}>
+                Usually replies within one business day.
+              </Text>
+
+              <Pressable
+                style={styles.blueBtn}
+                onPress={() => {
+                  showToast(
+                    supportMessage.trim()
+                      ? 'Support request sent'
+                      : 'Support ticket opened'
+                  );
+                  setSupportMessage('');
+                }}
+              >
+                <Text style={styles.blueBtnText}>✉ Contact Support</Text>
+              </Pressable>
+            </ScrollView>
+          )}
+
+          {/* SUB-SCREEN: MY ACTIVITY */}
+          {subScreen === 'activity' && (
+            <ScrollView contentContainerStyle={styles.dashScroll}>
+              <View style={styles.subHeaderRow}>
+                <Pressable onPress={() => setSubScreen(null)}>
+                  <Text style={styles.backChevron}>‹</Text>
+                </Pressable>
+                <Text style={styles.subHeaderTitle}>My Activity</Text>
+              </View>
+
+              <View style={styles.listCard}>
+                <Text style={styles.listCardTitle}>Recent Workspace Actions</Text>
+                <Text style={styles.listCardSub}>
+                  Signed in as {profileDisplayEmail} ({activeRole}) in {companyDisplayName}.
+                </Text>
+                <Text style={styles.listCardMeta}>
+                  Controls tracked: {totalCount} • Compliant: {compliantCount}
+                </Text>
+              </View>
+            </ScrollView>
+          )}
+
+          {/* SUB-SCREEN: ABOUT APPLICATION */}
+          {subScreen === 'about' && (
+            <ScrollView contentContainerStyle={styles.dashScroll}>
+              <View style={styles.subHeaderRow}>
+                <Pressable onPress={() => setSubScreen(null)}>
+                  <Text style={styles.backChevron}>‹</Text>
+                </Pressable>
+                <Text style={styles.subHeaderTitle}>About Application</Text>
+              </View>
+
+              <View style={styles.listCard}>
+                <Text style={styles.listCardTitle}>ComplianceGuard</Text>
+                <Text style={styles.listCardSub}>Version 1.0.0</Text>
+                <Text style={styles.listCardMeta}>
+                  Your workspace. Your compliance journey.
+                </Text>
+              </View>
+            </ScrollView>
+          )}
+
+          {/* SUB-SCREEN: CONTROL DETAILS (SCREEN 08) */}
+          {subScreen === 'detail' && selectedControl && (
+            <ScrollView contentContainerStyle={styles.dashScroll}>
+              <View style={styles.subHeaderRow}>
+                <Pressable onPress={() => setSubScreen(null)}>
+                  <Text style={styles.backChevron}>‹</Text>
+                </Pressable>
+                <Text style={styles.subHeaderTitle}>Control Details</Text>
+              </View>
+
+              <View style={styles.detailCard}>
+                <View style={styles.detailTopMeta}>
+                  <Text style={styles.codeLabel}>{selectedControl.id || selectedControl.code}</Text>
+                  <View style={styles.amberBadge}>
+                    <Text style={styles.amberBadgeText}>
+                      • {selectedControl.status || 'In Progress'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.detailTitle}>
+                  {selectedControl.name || selectedControl.title}
+                </Text>
+                <Text style={styles.detailSub}>
+                  {selectedControl.framework || 'SOC 2'} • Logical & physical access
+                </Text>
+
+                <Text style={styles.detailSectionTitle}>Description</Text>
+                <Text style={styles.detailBody}>
+                  {selectedControl.description ||
+                    'Review user access to critical systems every quarter. Confirm permissions follow least privilege and remove access that is no longer required.'}
+                </Text>
+
+                <View style={styles.detailMetaRow}>
+                  <Text style={styles.mutedSmall}>Control owner</Text>
+                  <Text style={styles.detailMetaVal}>
+                    {selectedControl.updatedBy || 'Alex Morgan'}
+                  </Text>
+                </View>
+                <View style={styles.detailMetaRow}>
+                  <Text style={styles.mutedSmall}>Last Updated</Text>
+                  <Text style={styles.detailMetaVal}>Nov 24, 2026</Text>
+                </View>
+
+                <Text style={styles.fieldLabel}>Evidence Note</Text>
+                <TextInput
+                  style={styles.fieldInput}
+                  placeholder="Add evidence note..."
+                  placeholderTextColor="#94A3B8"
+                  value={noteDraft}
+                  onChangeText={setNoteDraft}
+                />
+
+                <Pressable
+                  style={styles.blueBtn}
+                  onPress={() =>
+                    handleUpdateControl(selectedControl, {
+                      evidence: noteDraft,
+                      evidenceNote: noteDraft,
+                    })
+                  }
+                >
+                  <Text style={styles.blueBtnText}>Update Status</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          )}
+
+          {/* MAIN TAB: HOME / OVERVIEW (SCREENS 06 & 16) */}
+          {!subScreen && activeTab === 'home' && (
+            <ScrollView contentContainerStyle={styles.dashScroll}>
+              <View style={styles.homeTopBar}>
+                <View style={styles.brandRow}>
+                  <View style={styles.logoBadge}>
+                    <Text style={styles.logoText}>CG</Text>
+                  </View>
+                  <View>
+                    <Pressable onPress={() => goToWorkspaceScreen()}>
+                      <Text style={styles.homeOrgName}>{companyDisplayName} ⌄</Text>
+                    </Pressable>
+                    <Text style={styles.homeOrgSub}>
+                      {selectedOrg ? `${selectedOrg.framework || 'SOC 2'} • ${activeRole}` : 'Your workspace • Admin'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Pressable
+                  style={styles.bellBtn}
+                  onPress={() => setSubScreen('notifications')}
+                >
+                  <Text style={styles.bellGlyph}>🔔</Text>
+                  {unreadCount > 0 ? <View style={styles.bellDot} /> : null}
+                </Pressable>
+              </View>
+
+              <View style={styles.overviewHeaderRow}>
+                <Text style={styles.overviewHeading}>Overview</Text>
+                <Text style={styles.dateLabel}>Tue, Nov 24</Text>
+              </View>
+
+              <View style={styles.blueHeroCard}>
+                <View style={styles.blueHeroTop}>
+                  <Text style={styles.blueHeroLabel}>Compliance Readiness</Text>
+                  <Pressable onPress={() => setActiveTab('controls')}>
+                    <Text style={styles.blueHeroChevron}>›</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.blueHeroPercent}>{readinessScore}%</Text>
+                <View style={styles.blueProgressTrack}>
+                  <View style={[styles.blueProgressFill, { width: `${readinessScore}%` }]} />
+                </View>
+                <Text style={styles.blueHeroCaption}>
+                  {totalCount === 0
+                    ? '0 controls added'
+                    : `${compliantCount} of ${totalCount} controls are compliant`}
+                </Text>
+              </View>
+
+              <View style={styles.stats2x2}>
+                <View style={styles.statTile}>
+                  <Text style={styles.statNumBlue}>{totalCount}</Text>
+                  <Text style={styles.statLabel}>Total Controls</Text>
+                </View>
+                <View style={styles.statTile}>
+                  <Text style={styles.statNumBlue}>{compliantCount}</Text>
+                  <Text style={styles.statLabel}>Compliant</Text>
+                </View>
+                <View style={styles.statTile}>
+                  <Text style={styles.statNumBlue}>{inProgressCount}</Text>
+                  <Text style={styles.statLabel}>In Progress</Text>
+                </View>
+                <View style={styles.statTile}>
+                  <Text style={styles.statNumBlue}>{nonCompliantCount}</Text>
+                  <Text style={styles.statLabel}>Non-Compliant</Text>
+                </View>
+              </View>
+
+              {totalCount === 0 && !loadingControls ? (
+                <View style={styles.emptyShieldCard}>
+                  <View style={styles.shieldCircle}>
+                    <Text style={styles.shieldEmoji}>🛡</Text>
+                  </View>
+                  <Text style={styles.emptyBoldTitle}>No controls added yet.</Text>
+                  <Text style={styles.emptySubText}>
+                    Start building your compliance readiness by adding your first control.
+                  </Text>
+                  {!isAuditor && (
+                    <Pressable
+                      style={[styles.blueBtn, { width: '100%' }]}
+                      onPress={() => {
+                        setActiveTab('controls');
+                        setShowAddControl(true);
+                      }}
+                    >
+                      <Text style={styles.blueBtnText}>Add Your First Control</Text>
+                    </Pressable>
+                  )}
+                </View>
+              ) : (
+                <View style={styles.listCard}>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.listCardTitle}>Workspace Controls</Text>
+                    <Pressable onPress={() => loadDashboardData(selectedOrg, true)}>
+                      <Text style={styles.inlineBlueLink}>
+                        {syncingData ? 'Syncing...' : 'Sync'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                  <Pressable
+                    style={styles.blueBtn}
+                    onPress={() => setActiveTab('controls')}
+                  >
+                    <Text style={styles.blueBtnText}>Manage Controls ({totalCount})</Text>
+                  </Pressable>
+                </View>
+              )}
+            </ScrollView>
+          )}
+
+          {/* MAIN TAB: CONTROLS (SCREENS 07, 09 & 17) */}
+          {!subScreen && activeTab === 'controls' && (
+            <ScrollView contentContainerStyle={styles.dashScroll} keyboardShouldPersistTaps="handled">
+              <View style={styles.subHeaderRow}>
+                <Pressable onPress={() => setActiveTab('home')}>
+                  <Text style={styles.backChevron}>‹</Text>
+                </Pressable>
+                <Text style={styles.subHeaderTitle}>Controls</Text>
+              </View>
+
+              <View style={styles.searchBox}>
+                <Text style={styles.searchIcon}>🔍</Text>
+                <TextInput
+                  style={styles.searchTextInput}
+                  placeholder="Search by ID or title"
+                  placeholderTextColor="#94A3B8"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+              </View>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterRow}
+              >
+                {['All', ...STATUS_OPTIONS].map((st) => {
+                  const active = statusFilter === st;
+                  return (
+                    <Pressable
+                      key={st}
+                      style={[styles.filterPill, active && styles.activeFilterPill]}
+                      onPress={() => setStatusFilter(st)}
+                    >
+                      <Text style={[styles.filterPillText, active && styles.activeFilterPillText]}>
+                        {st}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              <Text style={styles.countMetaLine}>
+                {totalCount} controls • {nonCompliantCount} need attention
+              </Text>
+
+              {showAddControl && !isAuditor && (
+                <View style={styles.formCard}>
+                  <Text style={styles.listCardTitle}>Add Control</Text>
+
+                  <Text style={styles.fieldLabel}>Control ID</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    placeholder="e.g. CC6.1"
+                    placeholderTextColor="#94A3B8"
+                    value={newCode}
+                    onChangeText={setNewCode}
+                  />
+
+                  <Text style={styles.fieldLabel}>Control Title</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    placeholder="Enter a descriptive control title"
+                    placeholderTextColor="#94A3B8"
+                    value={newTitle}
+                    onChangeText={setNewTitle}
+                  />
+
+                  <Text style={styles.fieldLabel}>Framework</Text>
+                  <View style={styles.chipsWrap}>
+                    {FRAMEWORKS.map((fw) => (
+                      <Pressable
+                        key={fw}
+                        style={[styles.chip, newFramework === fw && styles.activeChip]}
+                        onPress={() => setNewFramework(fw)}
+                      >
+                        <Text style={[styles.chipText, newFramework === fw && styles.activeChipText]}>
+                          {fw}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  <Text style={styles.fieldLabel}>Description</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    placeholder="Describe the control and its requirements"
+                    placeholderTextColor="#94A3B8"
+                    value={newDescription}
+                    onChangeText={setNewDescription}
+                  />
+
+                  <Text style={styles.fieldLabel}>Status</Text>
+                  <View style={styles.chipsWrap}>
+                    {STATUS_OPTIONS.map((st) => (
+                      <Pressable
+                        key={st}
+                        style={[styles.chip, newStatus === st && styles.activeChip]}
+                        onPress={() => setNewStatus(st)}
+                      >
+                        <Text style={[styles.chipText, newStatus === st && styles.activeChipText]}>
+                          {st}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  <Text style={styles.fieldLabel}>Evidence Note</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    placeholder="PDF, DOCX, PNG • Evidence note"
+                    placeholderTextColor="#94A3B8"
+                    value={newEvidence}
+                    onChangeText={setNewEvidence}
+                  />
+
+                  <Text style={styles.fieldLabel}>Owner</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    placeholder="Alex Morgan"
+                    placeholderTextColor="#94A3B8"
+                    value={newOwner}
+                    onChangeText={setNewOwner}
+                  />
+
+                  <View style={styles.twoBtnRow}>
+                    <Pressable
+                      style={styles.cancelHalfBtn}
+                      onPress={() => setShowAddControl(false)}
+                    >
+                      <Text style={styles.cancelHalfText}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.saveHalfBtn}
+                      onPress={handleAddControl}
+                      disabled={savingControl}
+                    >
+                      <Text style={styles.saveHalfText}>
+                        {savingControl ? 'Saving...' : 'Save'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+
+              {loadingControls ? (
+                <View style={styles.loaderBox}>
+                  <ActivityIndicator size="small" color="#2554D7" />
+                  <Text style={styles.mutedSmall}>Loading controls...</Text>
+                </View>
+              ) : filteredControls.length === 0 ? (
+                <View style={styles.emptyShieldCard}>
+                  <View style={styles.shieldCircle}>
+                    <Text style={styles.shieldEmoji}>🛡</Text>
+                  </View>
+                  <Text style={styles.emptyBoldTitle}>No controls added yet.</Text>
+                  <Text style={styles.emptySubText}>
+                    Add your first control to start tracking compliance for your company.
+                  </Text>
+                  {!isAuditor && (
+                    <Pressable
+                      style={[styles.blueBtn, { width: '100%' }]}
+                      onPress={() => setShowAddControl(true)}
+                    >
+                      <Text style={styles.blueBtnText}>Add Your First Control</Text>
+                    </Pressable>
+                  )}
+                </View>
+              ) : (
+                filteredControls.map((ctrl, idx) => {
+                  const id = ctrl._id || ctrl.id || idx;
+                  const isEditingNote = editingNoteId === id;
+                  const isConfirmingDel = confirmDeleteId === id;
+                  const proofText = ctrl.evidence || ctrl.evidenceNote || '';
+
+                  return (
+                    <View key={id} style={styles.controlCard}>
+                      <View style={styles.controlTopRow}>
+                        <Text style={styles.codeLabel}>
+                          {ctrl.code || ctrl.id || `CC${idx + 1}.1`}
+                        </Text>
+                        <Pressable
+                          onPress={() => {
+                            setSelectedControl(ctrl);
+                            setNoteDraft(proofText);
+                            setSubScreen('detail');
+                          }}
+                        >
+                          <Text style={styles.dotsMore}>•••</Text>
+                        </Pressable>
+                      </View>
+
+                      <Pressable
+                        onPress={() => {
+                          setSelectedControl(ctrl);
+                          setNoteDraft(proofText);
+                          setSubScreen('detail');
+                        }}
+                      >
+                        <Text style={styles.controlTitle}>{ctrl.title || ctrl.name}</Text>
+                      </Pressable>
+
+                      <View style={styles.controlBottomMeta}>
+                        <Text style={styles.fwLabel}>{ctrl.framework || 'SOC 2'}</Text>
+                        <View
+                          style={[
+                            styles.statusTagBadge,
+                            ctrl.status === 'Compliant'
+                              ? styles.badgeGreen
+                              : ctrl.status === 'In Progress'
+                              ? styles.badgeYellow
+                              : styles.badgeRed,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusTagText,
+                              ctrl.status === 'Compliant'
+                                ? styles.textGreen
+                                : ctrl.status === 'In Progress'
+                                ? styles.textYellow
+                                : styles.textRed,
+                            ]}
+                          >
+                            • {ctrl.status || 'In Progress'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.statusRow}>
+                        {STATUS_OPTIONS.map((st) => {
+                          const active = ctrl.status === st;
+                          return (
+                            <Pressable
+                              key={st}
+                              style={[styles.miniStatusChip, active && styles.miniStatusActive]}
+                              onPress={() => handleUpdateControl(ctrl, { status: st })}
+                            >
+                              <Text
+                                style={[
+                                  styles.miniStatusText,
+                                  active && styles.miniStatusTextActive,
+                                ]}
+                              >
+                                {st}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+
+                      {isEditingNote ? (
+                        <View style={styles.noteEditBox}>
+                          <TextInput
+                            style={styles.fieldInput}
+                            placeholder="Add evidence note..."
+                            placeholderTextColor="#94A3B8"
+                            value={noteDraft}
+                            onChangeText={setNoteDraft}
+                          />
+                          <View style={styles.twoBtnRow}>
+                            <Pressable
+                              style={styles.saveHalfBtn}
+                              onPress={() => {
+                                handleUpdateControl(ctrl, {
+                                  evidence: noteDraft,
+                                  evidenceNote: noteDraft,
+                                });
+                                setEditingNoteId(null);
+                              }}
+                            >
+                              <Text style={styles.saveHalfText}>Save Proof</Text>
+                            </Pressable>
+                            <Pressable
+                              style={styles.cancelHalfBtn}
+                              onPress={() => setEditingNoteId(null)}
+                            >
+                              <Text style={styles.cancelHalfText}>Cancel</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      ) : (
+                        <View style={styles.evidenceRow}>
+                          <Text style={styles.evidenceText} numberOfLines={1}>
+                            Evidence: {proofText || 'None'}
+                          </Text>
+                          {!isAuditor && (
+                            <Pressable
+                              onPress={() => {
+                                setEditingNoteId(id);
+                                setNoteDraft(proofText);
+                              }}
+                            >
+                              <Text style={styles.inlineBlueLink}>
+                                {proofText ? 'Edit' : '+ Proof'}
+                              </Text>
+                            </Pressable>
+                          )}
+                        </View>
+                      )}
+
+                      {isSuperAdmin && (
+                        <View style={styles.deleteBar}>
+                          {isConfirmingDel ? (
+                            <View style={styles.confirmDelRow}>
+                              <Text style={styles.mutedSmall}>Delete control?</Text>
+                              <Pressable onPress={() => handleDeleteControl(id)}>
+                                <Text style={styles.dangerLink}>Yes, Delete</Text>
+                              </Pressable>
+                              <Pressable onPress={() => setConfirmDeleteId(null)}>
+                                <Text style={styles.mutedSmall}>Cancel</Text>
+                              </Pressable>
+                            </View>
+                          ) : (
+                            <Pressable onPress={() => setConfirmDeleteId(id)}>
+                              <Text style={styles.dangerLink}>Delete Control</Text>
+                            </Pressable>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })
+              )}
+
+              {!isAuditor && (
+                <Pressable
+                  style={styles.blueBtn}
+                  onPress={() => setShowAddControl((prev) => !prev)}
+                >
+                  <Text style={styles.blueBtnText}>
+                    {showAddControl ? 'Close Form' : '+ Add Control'}
+                  </Text>
+                </Pressable>
+              )}
+            </ScrollView>
+          )}
+
+          {/* MAIN TAB: PROFILE (SCREEN 10) */}
+          {!subScreen && activeTab === 'profile' && (
+            <ScrollView contentContainerStyle={styles.dashScroll}>
+              <Text style={styles.pageTitleLarge}>Profile</Text>
+
+              <View style={styles.profileCenterBlock}>
+                <View style={styles.avatarRing}>
+                  {PROFILE_PHOTO ? (
+                    <Image source={PROFILE_PHOTO} style={styles.avatarImage} />
+                  ) : (
+                    <Text style={styles.avatarFallbackText}>
+                      {profileDisplayName.slice(0, 2).toUpperCase()}
+                    </Text>
+                  )}
+                </View>
+                <Text style={styles.profileNameText}>{profileDisplayName}</Text>
+                <Text style={styles.profileEmailText}>{profileDisplayEmail}</Text>
+              </View>
+
+              <Pressable style={styles.orgSummaryCard} onPress={() => goToWorkspaceScreen()}>
+                <View style={styles.orgIconBox}>
+                  <Text style={styles.orgIconGlyph}>🏢</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.orgCardTitle}>{companyDisplayName}</Text>
+                  <Text style={styles.orgCardSub}>Organization administrator</Text>
+                </View>
+              </Pressable>
+
+              <Text style={styles.sectionCaps}>YOUR ACCOUNT</Text>
+
+              <View style={styles.menuGroupCard}>
+                <Pressable style={styles.menuRow} onPress={() => setSubScreen('activity')}>
+                  <Text style={styles.menuLeftIcon}>📈</Text>
+                  <Text style={styles.menuRowLabel}>My Activity</Text>
+                  <Text style={styles.menuChevron}>›</Text>
+                </Pressable>
+
+                <View style={styles.rowDivider} />
+
+                <Pressable style={styles.menuRow} onPress={() => setSubScreen('notifications')}>
+                  <Text style={styles.menuLeftIcon}>🔔</Text>
+                  <Text style={styles.menuRowLabel}>Notifications</Text>
+                  {unreadCount > 0 ? (
+                    <View style={styles.countCircleBadge}>
+                      <Text style={styles.countCircleText}>{unreadCount}</Text>
+                    </View>
+                  ) : null}
+                  <Text style={styles.menuChevron}>›</Text>
+                </Pressable>
+
+                <View style={styles.rowDivider} />
+
+                <Pressable style={styles.menuRow} onPress={() => setSubScreen('support')}>
+                  <Text style={styles.menuLeftIcon}>🎧</Text>
+                  <Text style={styles.menuRowLabel}>Help &amp; Support</Text>
+                  <Text style={styles.menuChevron}>›</Text>
+                </Pressable>
+
+                <View style={styles.rowDivider} />
+
+                <Pressable style={styles.menuRow} onPress={() => setSubScreen('about')}>
+                  <Text style={styles.menuLeftIcon}>ⓘ</Text>
+                  <Text style={styles.menuRowLabel}>About App</Text>
+                  <Text style={styles.menuChevron}>›</Text>
+                </Pressable>
+
+                <View style={styles.rowDivider} />
+
+                <Pressable style={styles.menuRow} onPress={handleSignOut}>
+                  <Text style={styles.logoutIconRed}>↪</Text>
+                  <Text style={styles.logoutLabelRed}>Logout</Text>
+                  <Text style={styles.menuChevron}>›</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.footerTagline}>
+                Your workspace. Your compliance journey.
+              </Text>
+            </ScrollView>
+          )}
+
+          {/* MAIN TAB: SETTINGS (SCREEN 11) */}
+          {!subScreen && activeTab === 'settings' && (
+            <ScrollView contentContainerStyle={styles.dashScroll}>
+              <Text style={styles.pageTitleLarge}>Settings</Text>
+              <Text style={styles.pageSubMuted}>Make ComplianceGuard work for you.</Text>
+
+              <Text style={styles.sectionCaps}>PREFERENCES</Text>
+              <View style={styles.menuGroupCard}>
+                <View style={styles.menuRow}>
+                  <Text style={styles.menuLeftIcon}>☀</Text>
+                  <Text style={styles.menuRowLabel}>Appearance</Text>
+                  <Text style={styles.menuRightValue}>Light ›</Text>
+                </View>
+
+                <View style={styles.rowDivider} />
+
+                <View style={styles.menuRow}>
+                  <Text style={styles.menuLeftIcon}>🌐</Text>
+                  <Text style={styles.menuRowLabel}>Language</Text>
+                  <Text style={styles.menuRightValue}>English ›</Text>
+                </View>
+              </View>
+
+              <Text style={styles.sectionCaps}>SECURITY &amp; DATA</Text>
+              <View style={styles.menuGroupCard}>
+                <Pressable
+                  style={styles.menuRow}
+                  onPress={() => showToast('Password, biometrics & permissions active')}
+                >
+                  <Text style={styles.menuLeftIcon}>🛡</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.menuRowLabel}>Security &amp; Privacy</Text>
+                    <Text style={styles.menuRowSub}>
+                      Password, biometrics &amp; permissions
+                    </Text>
+                  </View>
+                  <Text style={styles.menuChevron}>›</Text>
+                </Pressable>
+
+                <View style={styles.rowDivider} />
+
+                <Pressable
+                  style={styles.menuRow}
+                  onPress={() => loadDashboardData(selectedOrg, true)}
+                >
+                  <Text style={styles.menuLeftIcon}>🔄</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.menuRowLabel}>Data Sync</Text>
+                    <Text style={styles.menuRowSub}>
+                      Synced just now • Auto-sync on
+                    </Text>
+                  </View>
+                  <Text style={styles.menuChevron}>›</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.sectionCaps}>APPLICATION</Text>
+              <View style={styles.menuGroupCard}>
+                <Pressable style={styles.menuRow} onPress={() => setSubScreen('about')}>
+                  <Text style={styles.menuLeftIcon}>ⓘ</Text>
+                  <Text style={styles.menuRowLabel}>About Application</Text>
+                  <Text style={styles.menuRightValue}>v1.0.0 ›</Text>
+                </Pressable>
+              </View>
+
+              <Pressable style={styles.logoutCardBtn} onPress={handleSignOut}>
+                <Text style={styles.logoutIconRed}>↪</Text>
+                <Text style={styles.logoutLabelRed}>Logout</Text>
+                <Text style={styles.menuChevron}>›</Text>
+              </Pressable>
+
+              <Text style={styles.footerTagline}>ComplianceGuard • Version 1.0.0</Text>
+            </ScrollView>
+          )}
+
+          {/* BOTTOM NAVIGATION BAR (HOME, CONTROLS, PROFILE, SETTINGS) */}
+          <View style={styles.bottomNav}>
+            {[
+              { id: 'home', icon: '⌂', label: 'Home' },
+              { id: 'controls', icon: '☰', label: 'Controls' },
+              { id: 'profile', icon: '👤', label: 'Profile' },
+              { id: 'settings', icon: '⚙', label: 'Settings' },
+            ].map((tab) => {
+              const active = !subScreen && activeTab === tab.id;
+              return (
+                <Pressable
+                  key={tab.id}
+                  style={styles.navTabBtn}
+                  onPress={() => {
+                    setSubScreen(null);
+                    setActiveTab(tab.id);
+                  }}
+                >
+                  <Text style={[styles.navIcon, active && styles.navActiveColor]}>
+                    {tab.icon}
+                  </Text>
+                  <Text style={[styles.navLabel, active && styles.navActiveColor]}>
+                    {tab.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-        </ScrollView>
-      </SafeAreaView>
+        </SafeAreaView>
+      </View>
     );
   }
 
   // =========================================================
-  // SCREEN 1: MOBILE ONBOARDING
+  // WORKSPACE / EMPTY WORKSPACE SCREEN (SCREEN 14)
+  // =========================================================
+  if (screen === 'workspace') {
+    return (
+      <View style={styles.outerFrame}>
+        <SafeAreaView style={styles.mobileFrame}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+            <BrandTopBar
+              rightAction={
+                <Pressable style={styles.ghostPill} onPress={handleSignOut}>
+                  <Text style={styles.skipText}>Logout</Text>
+                </Pressable>
+              }
+            />
+
+            {apiError ? (
+              <View style={styles.alertErrorBox}>
+                <Text style={styles.errorText}>{apiError}</Text>
+              </View>
+            ) : null}
+
+            {loadingOrgs ? (
+              <View style={styles.loaderBox}>
+                <ActivityIndicator size="small" color="#2554D7" />
+                <Text style={styles.mutedSmall}>Loading workspace...</Text>
+              </View>
+            ) : orgs.length === 0 ? (
+              <View style={styles.emptyWorkspaceCenter}>
+                <Text style={styles.welcomeBigTitle}>Welcome to{'\n'}ComplianceGuard!</Text>
+                <Text style={styles.welcomeSubLine}>
+                  Your workspace is ready to get started.
+                </Text>
+
+                <View style={styles.shieldCircleLarge}>
+                  <Text style={styles.shieldEmojiLarge}>🛡</Text>
+                </View>
+
+                <Text style={styles.createPromptText}>
+                  Create your company to begin tracking compliance and audit readiness.
+                </Text>
+
+                <Pressable
+                  style={[styles.blueBtn, { width: '100%' }]}
+                  onPress={openCreateCompanyScreen}
+                >
+                  <Text style={styles.blueBtnText}>Create Your Company</Text>
+                </Pressable>
+
+                <Pressable onPress={() => loadOrganizations()}>
+                  <Text style={styles.learnMoreLink}>Refresh Workspaces</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.authBlock}>
+                <Text style={styles.uppercaseSection}>YOUR WORKSPACES</Text>
+                <Text style={styles.authSub}>
+                  {currentUser?.email} • {activeRole}
+                </Text>
+
+                <View style={styles.listGap}>
+                  {orgs.map((item, idx) => {
+                    const id = item._id || item.id || idx;
+                    return (
+                      <Pressable
+                        key={id}
+                        style={styles.orgSelectCard}
+                        onPress={() => openWorkspaceDashboard(item)}
+                      >
+                        <Text style={styles.orgSelectName}>
+                          {item.name || 'Your Company'}
+                        </Text>
+                        <Text style={styles.orgSelectMeta}>
+                          {item.framework || 'SOC 2'} • {item.cloud || 'AWS'}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Pressable style={styles.blueBtn} onPress={openCreateCompanyScreen}>
+                  <Text style={styles.blueBtnText}>Create Your Company</Text>
+                </Pressable>
+              </View>
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // =========================================================
+  // ONBOARDING SCREENS (SCREENS 01, 02 & 03)
   // =========================================================
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+    <View style={styles.outerFrame}>
+      <SafeAreaView style={styles.mobileFrame}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      <View style={styles.topBar}>
-        <View style={styles.brandRow}>
-          <View style={styles.logoBadge}>
-            <Text style={styles.logoText}>CG</Text>
+        <BrandTopBar
+          rightAction={
+            !isLastStep ? (
+              <Pressable style={styles.ghostPill} onPress={() => goToAuthScreen('login')}>
+                <Text style={styles.skipText}>Skip</Text>
+              </Pressable>
+            ) : null
+          }
+        />
+
+        <View style={styles.onboardCenter}>
+          <View style={styles.shieldCircleLarge}>
+            <Text style={styles.shieldEmojiLarge}>🛡</Text>
           </View>
-          <Text style={styles.brandName}>ComplianceGuard</Text>
+
+          <Text style={styles.onboardEyebrow}>{currentSlide.eyebrow}</Text>
+          <Text style={styles.onboardTitle}>{currentSlide.title}</Text>
+          <Text style={styles.onboardSubtitle}>{currentSlide.subtitle}</Text>
+
+          <View style={styles.dotsRow}>
+            {ONBOARDING_SLIDES.map((_, idx) => (
+              <View
+                key={idx}
+                style={[styles.dot, idx === stepIndex ? styles.activeDot : styles.inactiveDot]}
+              />
+            ))}
+          </View>
         </View>
 
-        {!isLastStep && (
-          <Pressable onPress={goToAuthScreen}>
-            <Text style={styles.skipText}>Skip</Text>
+        <View style={styles.onboardBottom}>
+          <Pressable style={styles.blueBtn} onPress={handleNext}>
+            <Text style={styles.blueBtnText}>{currentSlide.cta}   →</Text>
           </Pressable>
-        )}
-      </View>
 
-      <View style={styles.card}>
-        <Text style={styles.badgeText}>{currentSlide.badge}</Text>
-
-        <View style={styles.pillBox}>
-          <Text style={styles.pillText}>{currentSlide.highlight}</Text>
+          <View style={styles.centerRow}>
+            <Text style={styles.mutedSmall}>Already have an account? </Text>
+            <Pressable onPress={() => goToAuthScreen('login')}>
+              <Text style={styles.inlineBlueLink}>Sign in</Text>
+            </Pressable>
+            {stepIndex > 0 && (
+              <Pressable onPress={handleBack} style={{ marginLeft: 14 }}>
+                <Text style={styles.mutedSmall}>Back</Text>
+              </Pressable>
+            )}
+          </View>
         </View>
-
-        <Text style={styles.title}>{currentSlide.title}</Text>
-        <Text style={styles.subtitle}>{currentSlide.subtitle}</Text>
-
-        <View style={styles.dotsRow}>
-          {ONBOARDING_SLIDES.map((_, idx) => (
-            <View
-              key={idx}
-              style={[
-                styles.dot,
-                idx === stepIndex ? styles.activeDot : styles.inactiveDot,
-              ]}
-            />
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.footer}>
-        {stepIndex > 0 ? (
-          <Pressable style={styles.secondaryBtn} onPress={handleBack}>
-            <Text style={styles.secondaryBtnText}>Back</Text>
-          </Pressable>
-        ) : (
-          <View style={{ width: 90 }} />
-        )}
-
-        <Pressable style={styles.primaryBtn} onPress={handleNext}>
-          <Text style={styles.primaryBtnText}>
-            {isLastStep ? 'Get Started →' : 'Next →'}
-          </Text>
-        </Pressable>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
-const TOP_SAFE_SPACE =
-  Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 12 : 16;
+const TOP_SAFE = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 8 : 12;
+const BLUE_PRIMARY = '#2554D7';
 
 const styles = StyleSheet.create({
-  container: {
+  outerFrame: {
     flex: 1,
-    backgroundColor: '#F4F7FB',
-    justifyContent: 'space-between',
-    paddingTop: TOP_SAFE_SPACE,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
   },
-  dashboardShell: {
+  mobileFrame: {
     flex: 1,
-    backgroundColor: '#F4F7FB',
-    paddingTop: TOP_SAFE_SPACE,
+    width: '100%',
+    maxWidth: 430,
+    backgroundColor: '#FFFFFF',
+    paddingTop: TOP_SAFE,
   },
   scrollContent: {
-    paddingBottom: 90,
-    gap: 14,
+    paddingHorizontal: 20,
+    paddingBottom: 60,
   },
   dashScroll: {
-    padding: 16,
+    paddingHorizontal: 18,
+    paddingTop: 10,
     paddingBottom: 32,
-    gap: 12,
   },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 8,
+    paddingVertical: 10,
   },
   brandRow: {
     flexDirection: 'row',
@@ -1627,110 +2366,144 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   logoBadge: {
-    backgroundColor: '#1D4ED8',
-    paddingHorizontal: 10,
+    backgroundColor: BLUE_PRIMARY,
+    paddingHorizontal: 9,
     paddingVertical: 6,
     borderRadius: 8,
   },
   logoText: {
     color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 13,
+    fontWeight: '800',
+    fontSize: 12,
   },
   brandName: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontWeight: '800',
+    color: BLUE_PRIMARY,
+    letterSpacing: -0.2,
+  },
+  ghostPill: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   skipText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 22,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1D4ED8',
-    letterSpacing: 0.8,
-  },
-  sectionTitle: {
-    fontSize: 21,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginTop: 8,
-  },
-  sectionTitleSmall: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 8,
-  },
-  pillBox: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#EFF6FF',
-    borderColor: '#BFDBFE',
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    marginTop: 14,
-  },
-  pillText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#1E40AF',
+    color: '#475569',
   },
-  title: {
+  onboardCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  onboardEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.7,
+    marginTop: 22,
+    textAlign: 'center',
+  },
+  onboardTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginTop: 10,
+    lineHeight: 35,
+  },
+  onboardSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 12,
+    lineHeight: 20,
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 24,
+  },
+  dot: {
+    height: 6,
+    borderRadius: 999,
+  },
+  activeDot: {
+    width: 22,
+    backgroundColor: BLUE_PRIMARY,
+  },
+  inactiveDot: {
+    width: 6,
+    backgroundColor: '#CBD5E1',
+  },
+  onboardBottom: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  authBlock: {
+    marginTop: 10,
+  },
+  uppercaseSection: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  authTitle: {
     fontSize: 26,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  authSub: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  fieldLabel: {
+    fontSize: 13,
     fontWeight: '700',
     color: '#0F172A',
-    marginTop: 16,
-    lineHeight: 33,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#475569',
-    marginTop: 8,
-    lineHeight: 21,
-  },
-  helperText: {
-    fontSize: 13,
-    color: '#475569',
-    marginTop: 8,
-    lineHeight: 19,
-  },
-  modeToggleRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 4,
-    marginTop: 16,
+    marginTop: 12,
     marginBottom: 6,
-    gap: 6,
   },
-  modeBtn: {
-    flex: 1,
-    paddingVertical: 10,
+  fieldInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: '#0F172A',
+  },
+  passwordWrap: {
+    flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingRight: 12,
   },
-  activeModeBtn: {
-    backgroundColor: '#1D4ED8',
+  passwordInput: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 14,
+    color: '#0F172A',
   },
-  modeBtnText: {
-    fontSize: 13,
+  eyeBtn: {
+    fontSize: 14,
+    color: '#64748B',
     fontWeight: '700',
-    color: '#475569',
-  },
-  activeModeBtnText: {
-    color: '#FFFFFF',
   },
   forgotLinkWrap: {
     alignSelf: 'flex-end',
@@ -1738,105 +2511,280 @@ const styles = StyleSheet.create({
   },
   forgotLinkText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#1D4ED8',
+    fontWeight: '700',
+    color: BLUE_PRIMARY,
   },
-  demoFillBtn: {
-    marginTop: 10,
+  termsRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    gap: 8,
+    marginTop: 12,
   },
-  demoFillText: {
+  checkbox: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: BLUE_PRIMARY,
+    borderColor: BLUE_PRIMARY,
+  },
+  checkmark: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 17,
+  },
+  blueBtn: {
+    backgroundColor: BLUE_PRIMARY,
+    borderRadius: 10,
+    paddingVertical: 13,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  blueBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  centerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 12,
+    flexWrap: 'wrap',
+  },
+  mutedSmall: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  inlineBlueLink: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1D4ED8',
+    color: BLUE_PRIMARY,
   },
-  actionBar: {
+  orDivider: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#94A3B8',
+    marginVertical: 12,
+  },
+  googleBtn: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingVertical: 11,
+  },
+  googleLogo: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: BLUE_PRIMARY,
+  },
+  googleBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  secureFootnote: {
+    textAlign: 'center',
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 14,
+  },
+  lockIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 12,
   },
-  smallPrimaryBtn: {
-    backgroundColor: '#1D4ED8',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
+  lockIconGlyph: {
+    fontSize: 20,
   },
-  smallPrimaryBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+  backToLoginBtn: {
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  backToLoginText: {
     fontSize: 13,
-  },
-  smallSecondaryBtn: {
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  smallSecondaryBtnText: {
-    color: '#334155',
     fontWeight: '600',
-    fontSize: 13,
+    color: BLUE_PRIMARY,
+  },
+  infoHintCard: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 18,
+  },
+  infoHintTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E3A8A',
+  },
+  infoHintDesc: {
+    fontSize: 11,
+    color: '#3B82F6',
+    marginTop: 2,
+  },
+  alertErrorBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
   },
   errorText: {
     color: '#B91C1C',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    marginTop: 8,
-    marginBottom: 6,
+  },
+  alertInfoBox: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
   },
   infoText: {
-    color: '#15803D',
-    fontSize: 13,
+    color: BLUE_PRIMARY,
+    fontSize: 12,
     fontWeight: '600',
-    marginTop: 8,
-    marginBottom: 6,
   },
-  formBox: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 16,
-    padding: 14,
+  emptyWorkspaceCenter: {
+    alignItems: 'center',
+    paddingTop: 18,
+    paddingHorizontal: 8,
+  },
+  welcomeBigTitle: {
+    fontSize: 25,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    lineHeight: 32,
+  },
+  welcomeSubLine: {
+    fontSize: 13,
+    color: '#64748B',
+    marginTop: 6,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  shieldCircleLarge: {
+    width: 118,
+    height: 118,
+    borderRadius: 59,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shieldEmojiLarge: {
+    fontSize: 54,
+  },
+  shieldCircle: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 12,
   },
-  formLabel: {
+  shieldEmoji: {
+    fontSize: 38,
+  },
+  createPromptText: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 12,
+    lineHeight: 19,
+  },
+  learnMoreLink: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#334155',
-    marginTop: 10,
-    marginBottom: 6,
+    color: BLUE_PRIMARY,
+    marginTop: 14,
   },
-  input: {
-    backgroundColor: '#FFFFFF',
+  listGap: {
+    gap: 10,
+    marginTop: 10,
+  },
+  orgSelectCard: {
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: '#F8FAFC',
+  },
+  orgSelectName: {
+    fontSize: 15,
+    fontWeight: '700',
     color: '#0F172A',
+  },
+  orgSelectMeta: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 3,
+  },
+  subHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  backChevron: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#0F172A',
+    lineHeight: 28,
+  },
+  subHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  subHeaderSub: {
+    fontSize: 12,
+    color: '#64748B',
   },
   chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 12,
+    marginTop: 4,
   },
   chip: {
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 10,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 11,
     paddingVertical: 7,
-    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
   },
   activeChip: {
-    backgroundColor: '#1D4ED8',
-    borderColor: '#1D4ED8',
+    backgroundColor: BLUE_PRIMARY,
+    borderColor: BLUE_PRIMARY,
   },
   chipText: {
     fontSize: 12,
@@ -1846,337 +2794,431 @@ const styles = StyleSheet.create({
   activeChipText: {
     color: '#FFFFFF',
   },
-  loaderBox: {
-    paddingVertical: 24,
-    alignItems: 'center',
-    gap: 8,
-  },
-  emptyBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  listGap: {
+  fwRow: {
+    flexDirection: 'row',
     gap: 10,
-    marginTop: 10,
-  },
-  orgCard: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 16,
-    padding: 14,
-  },
-  orgName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  orgMeta: {
-    fontSize: 13,
-    color: '#475569',
     marginTop: 4,
   },
-  tapHint: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1D4ED8',
-    marginTop: 8,
-  },
-  dotsRow: {
+  fwBox: {
+    flex: 1,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
-    marginTop: 24,
-  },
-  dot: {
-    height: 8,
-    borderRadius: 999,
-  },
-  activeDot: {
-    width: 24,
-    backgroundColor: '#1D4ED8',
-  },
-  inactiveDot: {
-    width: 8,
-    backgroundColor: '#CBD5E1',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
-    flexWrap: 'wrap',
-  },
-  secondaryBtn: {
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 14,
-  },
-  secondaryBtnText: {
-    color: '#334155',
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  primaryBtn: {
-    backgroundColor: '#1D4ED8',
-    paddingHorizontal: 20,
-    paddingVertical: 13,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  primaryBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  signOutBtn: {
-    marginTop: 16,
-    backgroundColor: '#FEE2E2',
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  signOutText: {
-    color: '#B91C1C',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  dashHeader: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  dashOrgName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#0F172A',
-    maxWidth: 220,
-  },
-  dashSubMeta: {
-    fontSize: 12,
-    color: '#475569',
-    marginTop: 2,
-  },
-  switchPill: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingVertical: 11,
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
   },
-  switchPillText: {
+  fwBoxActive: {
+    borderColor: BLUE_PRIMARY,
+    backgroundColor: '#EFF6FF',
+  },
+  sqCheck: {
+    width: 15,
+    height: 15,
+    borderRadius: 3,
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sqCheckActive: {
+    backgroundColor: BLUE_PRIMARY,
+    borderColor: BLUE_PRIMARY,
+  },
+  fwBoxText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1D4ED8',
+    color: '#334155',
+  },
+  fwBoxTextActive: {
+    color: BLUE_PRIMARY,
   },
   toastBox: {
-    backgroundColor: '#DBEAFE',
+    backgroundColor: '#EFF6FF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#BFDBFE',
     paddingVertical: 6,
     paddingHorizontal: 16,
   },
   toastText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1E40AF',
+    color: BLUE_PRIMARY,
   },
-  summaryCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+  homeTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  homeOrgName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  homeOrgSub: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  bellBtn: {
+    padding: 6,
+    position: 'relative',
+  },
+  bellGlyph: {
+    fontSize: 18,
+  },
+  bellDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+  },
+  overviewHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 8,
+  },
+  overviewHeading: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  dateLabel: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  blueHeroCard: {
+    backgroundColor: BLUE_PRIMARY,
+    borderRadius: 14,
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    marginBottom: 12,
   },
-  summaryTop: {
+  blueHeroTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  summaryLabel: {
-    fontSize: 11,
+  blueHeroLabel: {
+    fontSize: 13,
     fontWeight: '700',
-    color: '#475569',
+    color: '#FFFFFF',
   },
-  summaryPercent: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1D4ED8',
+  blueHeroChevron: {
+    fontSize: 18,
+    color: '#FFFFFF',
   },
-  progressTrack: {
-    height: 8,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 999,
+  blueHeroPercent: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#FFFFFF',
     marginTop: 8,
+  },
+  blueProgressTrack: {
+    height: 6,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+    borderRadius: 999,
+    marginTop: 10,
     overflow: 'hidden',
   },
-  progressFill: {
-    height: 8,
-    backgroundColor: '#1D4ED8',
+  blueProgressFill: {
+    height: 6,
+    backgroundColor: '#FFFFFF',
     borderRadius: 999,
   },
-  searchActionRow: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
+  blueHeroCaption: {
+    fontSize: 11,
+    color: '#DBEAFE',
+    marginTop: 8,
   },
-  searchInput: {
-    flex: 1,
+  stats2x2: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 12,
+  },
+  statTile: {
+    width: '48%',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
     borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  statNumBlue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: BLUE_PRIMARY,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 3,
+  },
+  emptyShieldCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    borderRadius: 14,
+    paddingVertical: 20,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  emptyBoldTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  emptySubText: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 17,
+  },
+  listCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 14,
+    gap: 8,
+  },
+  listCardTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  listCardSub: {
+    fontSize: 13,
+    color: '#475569',
+  },
+  listCardMeta: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  searchIcon: {
+    fontSize: 13,
+    marginRight: 8,
+  },
+  searchTextInput: {
+    flex: 1,
+    paddingVertical: 9,
     fontSize: 13,
     color: '#0F172A',
   },
-  addBtn: {
-    backgroundColor: '#1D4ED8',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 12,
-  },
-  addBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 13,
-  },
   filterRow: {
     gap: 8,
-    paddingVertical: 2,
+    marginBottom: 8,
   },
   filterPill: {
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
   },
   activeFilterPill: {
-    backgroundColor: '#1D4ED8',
-    borderColor: '#1D4ED8',
+    backgroundColor: BLUE_PRIMARY,
+    borderColor: BLUE_PRIMARY,
   },
   filterPillText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#334155',
+    color: '#475569',
   },
   activeFilterPillText: {
     color: '#FFFFFF',
   },
-  controlCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
+  countMetaLine: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 8,
+  },
+  formCard: {
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: '#F8FAFC',
+    marginBottom: 12,
+  },
+  twoBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  cancelHalfBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  cancelHalfText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  saveHalfBtn: {
+    flex: 1,
+    backgroundColor: BLUE_PRIMARY,
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  saveHalfText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  loaderBox: {
+    paddingVertical: 28,
+    alignItems: 'center',
+    gap: 8,
+  },
+  controlCard: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 10,
   },
   controlTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  codeBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  codeBadgeText: {
+  codeLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#1D4ED8',
-  },
-  categoryTag: {
-    fontSize: 11,
     color: '#64748B',
-    fontWeight: '600',
+  },
+  dotsMore: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#64748B',
   },
   controlTitle: {
     fontSize: 15,
     fontWeight: '700',
     color: '#0F172A',
+    marginTop: 4,
+  },
+  controlBottomMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: 8,
+  },
+  fwLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  statusTagBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  badgeGreen: {
+    backgroundColor: '#ECFDF5',
+  },
+  badgeYellow: {
+    backgroundColor: '#FFFBEB',
+  },
+  badgeRed: {
+    backgroundColor: '#FEF2F2',
+  },
+  statusTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  textGreen: {
+    color: '#059669',
+  },
+  textYellow: {
+    color: '#D97706',
+  },
+  textRed: {
+    color: '#DC2626',
   },
   statusRow: {
     flexDirection: 'row',
     gap: 6,
-    marginTop: 12,
+    marginTop: 10,
     flexWrap: 'wrap',
   },
-  statusChip: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+  miniStatusChip: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 7,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#F8FAFC',
   },
-  statusCompliant: {
-    backgroundColor: '#DCFCE7',
+  miniStatusActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: BLUE_PRIMARY,
   },
-  statusProgress: {
-    backgroundColor: '#FEF3C7',
-  },
-  statusNonCompliant: {
-    backgroundColor: '#FEE2E2',
-  },
-  statusChipText: {
-    fontSize: 11,
+  miniStatusText: {
+    fontSize: 10,
     fontWeight: '600',
     color: '#475569',
   },
-  statusChipTextActive: {
-    color: '#0F172A',
+  miniStatusTextActive: {
+    color: BLUE_PRIMARY,
     fontWeight: '700',
   },
   evidenceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 10,
+    marginTop: 10,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
     gap: 8,
   },
   evidenceText: {
     flex: 1,
-    fontSize: 12,
-    color: '#475569',
-  },
-  linkAction: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1D4ED8',
+    fontSize: 11,
+    color: '#64748B',
   },
   noteEditBox: {
-    marginTop: 10,
-    gap: 8,
-  },
-  noteBtnRow: {
-    flexDirection: 'row',
-    gap: 8,
+    marginTop: 8,
   },
   deleteBar: {
-    marginTop: 10,
-    paddingTop: 8,
+    marginTop: 8,
+    paddingTop: 6,
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
   },
@@ -2185,91 +3227,425 @@ const styles = StyleSheet.create({
     gap: 12,
     alignItems: 'center',
   },
-  confirmDelLabel: {
-    fontSize: 12,
-    color: '#334155',
-    fontWeight: '600',
-  },
   dangerLink: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: '#DC2626',
   },
-  mutedLink: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  reportGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  reportBox: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
+  detailCard: {
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    alignItems: 'center',
+    borderRadius: 12,
+    padding: 16,
+    backgroundColor: '#FFFFFF',
   },
-  reportNum: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1D4ED8',
-  },
-  reportLabel: {
-    fontSize: 12,
-    color: '#475569',
-    marginTop: 4,
-    fontWeight: '600',
-  },
-  memberRow: {
+  detailTopMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
   },
-  memberName: {
-    fontSize: 14,
+  amberBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  amberBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  detailTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 8,
+  },
+  detailSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 3,
+  },
+  detailSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  detailBody: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 19,
+  },
+  detailMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  detailMetaVal: {
+    fontSize: 12,
     fontWeight: '700',
     color: '#0F172A',
   },
-  memberEmail: {
+  pageTitleLarge: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 4,
+  },
+  pageSubMuted: {
     fontSize: 12,
     color: '#64748B',
     marginTop: 2,
+    marginBottom: 12,
+  },
+  profileCenterBlock: {
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  avatarRing: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarFallbackText: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: BLUE_PRIMARY,
+  },
+  profileNameText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 10,
+  },
+  profileEmailText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  orgSummaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 14,
+  },
+  orgIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  orgIconGlyph: {
+    fontSize: 16,
+  },
+  orgCardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  orgCardSub: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  sectionCaps: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94A3B8',
+    letterSpacing: 0.8,
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  menuGroupCard: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 10,
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  menuLeftIcon: {
+    fontSize: 14,
+    color: '#475569',
+    width: 20,
+    textAlign: 'center',
+  },
+  menuRowLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  menuRowSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  menuRightValue: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  menuChevron: {
+    fontSize: 16,
+    color: '#94A3B8',
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginLeft: 44,
+  },
+  countCircleBadge: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 999,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countCircleText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: BLUE_PRIMARY,
+  },
+  logoutIconRed: {
+    fontSize: 14,
+    color: '#EF4444',
+    width: 20,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  logoutLabelRed: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
+  logoutCardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    backgroundColor: '#FFFFFF',
+    marginTop: 4,
+    gap: 10,
+  },
+  footerTagline: {
+    textAlign: 'center',
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  notifTopHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  notifSubCount: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  markAllLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: BLUE_PRIMARY,
+  },
+  notifFilterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  notifChip: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    backgroundColor: '#FFFFFF',
+  },
+  notifChipActive: {
+    backgroundColor: BLUE_PRIMARY,
+    borderColor: BLUE_PRIMARY,
+  },
+  notifChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  notifChipTextActive: {
+    color: '#FFFFFF',
+  },
+  notifCard: {
+    flexDirection: 'row',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 8,
+  },
+  notifCardUnread: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#DBEAFE',
+  },
+  notifGlyph: {
+    fontSize: 15,
+    marginTop: 2,
+  },
+  notifTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  notifTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  unreadDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: BLUE_PRIMARY,
+  },
+  notifBody: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    lineHeight: 17,
+  },
+  notifTime: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
+  supportHeroBox: {
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  supportCircle: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  supportHeadset: {
+    fontSize: 26,
+  },
+  supportTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  supportSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 3,
+  },
+  faqHeading: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  faqCard: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 8,
+  },
+  faqQuestionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  faqQuestion: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  faqChevron: {
+    fontSize: 14,
+    color: '#64748B',
+    marginLeft: 8,
+  },
+  faqAnswer: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 8,
+    lineHeight: 17,
+  },
+  supportReplyNote: {
+    textAlign: 'center',
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 10,
   },
   bottomNav: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
-    padding: 6,
-    gap: 6,
+    paddingVertical: 6,
   },
-  navItem: {
+  navTabBtn: {
     flex: 1,
-    paddingVertical: 11,
-    borderRadius: 12,
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    paddingVertical: 4,
   },
-  navItemActive: {
-    backgroundColor: '#1D4ED8',
+  navIcon: {
+    fontSize: 15,
+    color: '#64748B',
   },
-  navText: {
-    fontSize: 11,
+  navLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  navActiveColor: {
+    color: BLUE_PRIMARY,
     fontWeight: '700',
-    color: '#475569',
-  },
-  navTextActive: {
-    color: '#FFFFFF',
   },
 });
