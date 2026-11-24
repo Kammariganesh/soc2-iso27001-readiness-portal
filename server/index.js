@@ -25,27 +25,65 @@ function validatePassword(pw) {
 }
 
 async function sendOtpEmail(toEmail, otpCode) {
-  const user = (process.env.EMAIL_USER || process.env.GMAIL_USER || '').trim();
-  const pass = (process.env.EMAIL_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+  const resendKey = (process.env.RESEND_API_KEY || '').trim();
+  const gmailUser = (process.env.EMAIL_USER || process.env.GMAIL_USER || '').trim();
+  const gmailPass = (process.env.EMAIL_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
 
-  if (!user || !pass) {
-    throw new Error('EMAIL_USER or EMAIL_PASS is missing in Render Environment.');
+  if (resendKey) {
+    const fromAddr = (process.env.RESEND_FROM || 'onboarding@resend.dev').trim();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromAddr,
+          to: [toEmail],
+          subject: 'ComplianceGuard Password Reset OTP',
+          text: `Your OTP to reset your ComplianceGuard password is: ${otpCode}. Valid for 10 minutes.`,
+        }),
+        signal: controller.signal,
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(`Resend API error: ${JSON.stringify(data)}`);
+      }
+      return;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user,
-      pass,
-    },
-  });
+  if (gmailUser && gmailPass) {
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+      auth: {
+        user: gmailUser,
+        pass: gmailPass,
+      },
+    });
 
-  await transporter.sendMail({
-    from: `"ComplianceGuard" <${user}>`,
-    to: toEmail,
-    subject: 'ComplianceGuard Password Reset OTP',
-    text: `Your OTP to reset your ComplianceGuard password is: ${otpCode}. Valid for 10 minutes.`,
-  });
+    await transporter.sendMail({
+      from: `"ComplianceGuard" <${gmailUser}>`,
+      to: toEmail,
+      subject: 'ComplianceGuard Password Reset OTP',
+      text: `Your OTP to reset your ComplianceGuard password is: ${otpCode}. Valid for 10 minutes.`,
+    });
+    return;
+  }
+
+  throw new Error('No email provider configured (RESEND_API_KEY or EMAIL_USER/EMAIL_PASS missing).');
 }
 
 app.get('/api/health', (req, res) => {
@@ -82,6 +120,7 @@ app.post('/api/login', async (req, res) => {
       },
     });
   } catch (err) {
+    console.error('Login error:', err);
     return res.status(500).json({ error: 'Login failed on server.' });
   }
 });
@@ -126,6 +165,7 @@ app.post('/api/signup', async (req, res) => {
       },
     });
   } catch (err) {
+    console.error('Signup error:', err);
     return res.status(500).json({ error: 'Signup failed on server.' });
   }
 });
@@ -155,7 +195,8 @@ app.post('/api/forgot-password/send-otp', async (req, res) => {
       message: `OTP sent to ${cleanEmail}. Check Inbox or Spam.`,
     });
   } catch (err) {
-    return res.status(403).json({
+    console.error('Send OTP error:', err);
+    return res.status(400).json({
       error: err.message || 'Failed to send OTP.',
     });
   }
@@ -189,6 +230,7 @@ app.post('/api/forgot-password/verify-reset', async (req, res) => {
 
     return res.json({ message: 'Password updated successfully.' });
   } catch (err) {
+    console.error('Verify reset error:', err);
     return res.status(500).json({ error: 'Could not reset password.' });
   }
 });
