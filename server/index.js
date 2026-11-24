@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const { MongoClient, ObjectId } = require('mongodb');
-const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(cors());
@@ -12,7 +11,6 @@ const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || 'complianceguard';
 
 let db;
-const otpStore = new Map();
 
 // Min 6 chars, >=1 uppercase, >=1 lowercase, >=1 special char; numbers allowed
 const PASSWORD_REGEX = /^(?=.*[A-Z])(?=.*[a-z])(?=.*[^A-Za-z0-9]).{6,}$/;
@@ -25,65 +23,47 @@ function validatePassword(pw) {
 }
 
 async function sendOtpEmail(toEmail, otpCode) {
-  const resendKey = (process.env.RESEND_API_KEY || '').trim();
-  const gmailUser = (process.env.EMAIL_USER || process.env.GMAIL_USER || '').trim();
-  const gmailPass = (process.env.EMAIL_PASS || process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+  const brevoKey = (process.env.BREVO_API_KEY || '').trim();
+  const senderEmail = (
+    process.env.BREVO_SENDER_EMAIL ||
+    process.env.EMAIL_USER ||
+    'kammariganesh777@gmail.com'
+  ).trim();
 
-  if (resendKey) {
-    const fromAddr = (process.env.RESEND_FROM || 'onboarding@resend.dev').trim();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
-
-    try {
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: fromAddr,
-          to: [toEmail],
-          subject: 'ComplianceGuard Password Reset OTP',
-          text: `Your OTP to reset your ComplianceGuard password is: ${otpCode}. Valid for 10 minutes.`,
-        }),
-        signal: controller.signal,
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(`Resend API error: ${JSON.stringify(data)}`);
-      }
-      return;
-    } finally {
-      clearTimeout(timer);
-    }
+  if (!brevoKey) {
+    throw new Error('BREVO_API_KEY is missing in Render Environment.');
   }
 
-  if (gmailUser && gmailPass) {
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
-      auth: {
-        user: gmailUser,
-        pass: gmailPass,
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': brevoKey,
+        'Content-Type': 'application/json',
+        accept: 'application/json',
       },
+      body: JSON.stringify({
+        sender: {
+          name: 'ComplianceGuard',
+          email: senderEmail,
+        },
+        to: [{ email: toEmail }],
+        subject: 'ComplianceGuard Password Reset OTP',
+        textContent: `Your OTP to reset your ComplianceGuard password is: ${otpCode}. It expires in 10 minutes.`,
+      }),
+      signal: controller.signal,
     });
 
-    await transporter.sendMail({
-      from: `"ComplianceGuard" <${gmailUser}>`,
-      to: toEmail,
-      subject: 'ComplianceGuard Password Reset OTP',
-      text: `Your OTP to reset your ComplianceGuard password is: ${otpCode}. Valid for 10 minutes.`,
-    });
-    return;
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(`Brevo API error (${response.status}): ${JSON.stringify(data)}`);
+    }
+  } finally {
+    clearTimeout(timer);
   }
-
-  throw new Error('No email provider configured (RESEND_API_KEY or EMAIL_USER/EMAIL_PASS missing).');
 }
 
 app.get('/api/health', (req, res) => {
@@ -185,10 +165,13 @@ app.post('/api/forgot-password/send-otp', async (req, res) => {
     }
 
     const otp = String(Math.floor(100000 + Math.random() * 900000));
-    otpStore.set(cleanEmail, {
-      otp,
-      expiresAt: Date.now() + 10 * 60 * 1000,
-    });
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await db.collection('password_otps').updateOne(
+      { email: cleanEmail },
+      { $set: { email: cleanEmail, otp, expiresAt, createdAt: new Date() } },
+      { upsert: true }
+    );
 
     await sendOtpEmail(cleanEmail, otp);
     return res.json({
@@ -217,8 +200,8 @@ app.post('/api/forgot-password/verify-reset', async (req, res) => {
       return res.status(400).json({ error: pwError });
     }
 
-    const record = otpStore.get(cleanEmail);
-    if (!record || record.otp !== cleanOtp || Date.now() > record.expiresAt) {
+    const record = await db.collection('password_otps').findOne({ email: cleanEmail });
+    if (!record || record.otp !== cleanOtp || new Date() > new Date(record.expiresAt)) {
       return res.status(400).json({ error: 'Invalid or expired OTP.' });
     }
 
@@ -226,7 +209,7 @@ app.post('/api/forgot-password/verify-reset', async (req, res) => {
       { email: cleanEmail },
       { $set: { password: newPassword, updatedAt: new Date() } }
     );
-    otpStore.delete(cleanEmail);
+    await db.collection('password_otps').deleteOne({ email: cleanEmail });
 
     return res.json({ message: 'Password updated successfully.' });
   } catch (err) {
@@ -384,8 +367,9 @@ app.post('/api/members', async (req, res) => {
 });
 
 MongoClient.connect(MONGO_URI)
-  .then((client) => {
+  .then(async (client) => {
     db = client.db(DB_NAME);
+    await db.collection('password_otps').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
     console.log('MongoDB Connected Successfully!');
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   })
