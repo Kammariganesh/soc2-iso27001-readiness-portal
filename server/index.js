@@ -206,8 +206,14 @@ async function handleVerifyAndResetPassword(req, res) {
     }
 
     const record = await db.collection('password_otps').findOne({ email: cleanEmail });
-    if (!record || record.otp !== cleanOtp || new Date() > new Date(record.expiresAt)) {
-      return res.status(400).json({ error: 'Invalid or expired OTP.' });
+    if (!record || new Date() > new Date(record.expiresAt)) {
+      return res.status(400).json({ error: 'OTP expired or not found. Please request a new OTP.' });
+    }
+
+    if (String(record.otp).trim() !== cleanOtp) {
+      return res.status(400).json({
+        error: 'You entered a wrong OTP. Please check and correct it.',
+      });
     }
 
     await db.collection('users').updateOne(
@@ -291,8 +297,10 @@ app.post('/api/organizations', async (req, res) => {
 
 app.get('/api/controls', async (req, res) => {
   try {
-    const orgId = (req.query?.orgId || '').trim();
-    const filter = orgId ? { orgId } : {};
+    const targetOrgId = (req.query?.organizationId || req.query?.orgId || '').trim();
+    const filter = targetOrgId
+      ? { $or: [{ organizationId: targetOrgId }, { orgId: targetOrgId }] }
+      : {};
     const list = await db.collection('controls').find(filter).sort({ _id: -1 }).toArray();
     return res.json(list);
   } catch (err) {
@@ -303,6 +311,7 @@ app.get('/api/controls', async (req, res) => {
 app.post('/api/controls', async (req, res) => {
   try {
     const body = req.body || {};
+    const resolvedOrgId = String(body.organizationId || body.orgId || '').trim();
     const doc = {
       id: (body.id || body.code || '').trim().toUpperCase(),
       code: (body.code || body.id || '').trim().toUpperCase(),
@@ -313,7 +322,8 @@ app.post('/api/controls', async (req, res) => {
       status: body.status || 'In Progress',
       evidence: (body.evidence || body.evidenceNote || '').trim(),
       evidenceNote: (body.evidenceNote || body.evidence || '').trim(),
-      orgId: body.orgId || '',
+      organizationId: resolvedOrgId,
+      orgId: resolvedOrgId,
       updatedBy: body.updatedBy || 'Alex Morgan',
       createdAt: new Date(),
     };
@@ -358,8 +368,10 @@ app.delete('/api/controls/:id', async (req, res) => {
 
 app.get('/api/members', async (req, res) => {
   try {
-    const orgId = (req.query?.orgId || '').trim();
-    const filter = orgId ? { orgId } : {};
+    const targetOrgId = (req.query?.organizationId || req.query?.orgId || '').trim();
+    const filter = targetOrgId
+      ? { $or: [{ organizationId: targetOrgId }, { orgId: targetOrgId }] }
+      : {};
     const list = await db.collection('members').find(filter).sort({ _id: -1 }).toArray();
     return res.json(list);
   } catch (err) {
@@ -370,11 +382,13 @@ app.get('/api/members', async (req, res) => {
 app.post('/api/members', async (req, res) => {
   try {
     const body = req.body || {};
+    const resolvedOrgId = String(body.organizationId || body.orgId || '').trim();
     const doc = {
       name: (body.name || '').trim(),
       email: (body.email || '').trim().toLowerCase(),
       role: body.role || 'Editor',
-      orgId: body.orgId || '',
+      organizationId: resolvedOrgId,
+      orgId: resolvedOrgId,
       createdAt: new Date(),
     };
     const result = await db.collection('members').insertOne(doc);
