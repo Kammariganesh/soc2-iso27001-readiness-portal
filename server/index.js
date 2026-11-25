@@ -34,6 +34,12 @@ async function sendOtpEmail(toEmail, otpCode) {
     throw new Error('BREVO_API_KEY is missing in Render Environment.');
   }
 
+  if (/[^\x00-\xFF]/.test(brevoKey)) {
+    throw new Error(
+      'BREVO_API_KEY contains invalid non-ASCII characters. Re-paste the exact API key in Render Environment.'
+    );
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
 
