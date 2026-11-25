@@ -53,11 +53,14 @@ async function sendOtpEmail(toEmail, otpCode) {
         to: [{ email: toEmail }],
         subject: 'ComplianceGuard Password Reset OTP',
         textContent: `Your OTP to reset your ComplianceGuard password is: ${otpCode}. It expires in 10 minutes.`,
+        htmlContent: `<p>Your OTP to reset your ComplianceGuard password is: <strong>${otpCode}</strong></p><p>It expires in 10 minutes.</p>`,
       }),
       signal: controller.signal,
     });
 
     const data = await response.json().catch(() => ({}));
+    console.log('Brevo API response status:', response.status, data);
+
     if (!response.ok) {
       throw new Error(`Brevo API error (${response.status}): ${JSON.stringify(data)}`);
     }
@@ -150,18 +153,11 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
-app.post('/api/forgot-password/send-otp', async (req, res) => {
+async function handleForgotPasswordOtp(req, res) {
   try {
     const cleanEmail = (req.body?.email || '').trim().toLowerCase();
-    if (!cleanEmail) {
-      return res.status(400).json({ error: 'Please enter an email address.' });
-    }
-
-    const registeredUser = await db.collection('users').findOne({ email: cleanEmail });
-    if (!registeredUser) {
-      return res.status(404).json({
-        error: 'This email is not registered, so please register.',
-      });
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' });
     }
 
     const otp = String(Math.floor(100000 + Math.random() * 900000));
@@ -183,9 +179,12 @@ app.post('/api/forgot-password/send-otp', async (req, res) => {
       error: err.message || 'Failed to send OTP.',
     });
   }
-});
+}
 
-app.post('/api/forgot-password/verify-reset', async (req, res) => {
+app.post('/api/auth/forgot-password', handleForgotPasswordOtp);
+app.post('/api/forgot-password/send-otp', handleForgotPasswordOtp);
+
+async function handleVerifyAndResetPassword(req, res) {
   try {
     const cleanEmail = (req.body?.email || '').trim().toLowerCase();
     const cleanOtp = (req.body?.otp || '').trim();
@@ -207,7 +206,17 @@ app.post('/api/forgot-password/verify-reset', async (req, res) => {
 
     await db.collection('users').updateOne(
       { email: cleanEmail },
-      { $set: { password: newPassword, updatedAt: new Date() } }
+      {
+        $set: {
+          password: newPassword,
+          email: cleanEmail,
+          name: cleanEmail.split('@')[0],
+          role: 'Super Admin',
+          updatedAt: new Date(),
+        },
+        $setOnInsert: { createdAt: new Date() },
+      },
+      { upsert: true }
     );
     await db.collection('password_otps').deleteOne({ email: cleanEmail });
 
@@ -216,7 +225,10 @@ app.post('/api/forgot-password/verify-reset', async (req, res) => {
     console.error('Verify reset error:', err);
     return res.status(500).json({ error: 'Could not reset password.' });
   }
-});
+}
+
+app.post('/api/auth/reset-password', handleVerifyAndResetPassword);
+app.post('/api/forgot-password/verify-reset', handleVerifyAndResetPassword);
 
 app.get('/api/organizations', async (req, res) => {
   try {
